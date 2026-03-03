@@ -1,0 +1,19 @@
+{
+  "orgUnitId": 29120,
+  "modelVersion": "29120.v1",
+  "maturityProfile": 2,
+
+  "gradingPolicy": {
+    "includeGradeObjectIds": [96314, 96315, 96316, 96317, 96318],
+    "excludeGradeObjectIds": [96359],
+    "autoDiscover": { "enabled": false }
+  },
+
+  "scale": {
+    "thresholds": { "critical": 50, "watch": 70 }
+  },
+
+  "projection": {
+    "scenarioPendingPct": { "risk": 50, "improve": 70 }
+  }
+}

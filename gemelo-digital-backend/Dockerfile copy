@@ -1,0 +1,30 @@
+# ----------- FRONTEND BUILD -----------
+FROM node:20-alpine AS frontend-build
+WORKDIR /frontend
+
+# Copiamos package.json del frontend
+COPY gemelo-digital-frontend/gemelo-frontend/package*.json ./
+RUN npm install
+
+# Copiamos todo el frontend
+COPY gemelo-digital-frontend/gemelo-frontend ./
+
+# Construimos React
+RUN npm run build
+
+
+# ----------- BACKEND -----------
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY gemelo-digital-backend/requirements.txt .
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY gemelo-digital-backend/app ./app
+COPY gemelo-digital-backend/config ./config
+
+# build del frontend dentro del backend
+COPY --from=frontend-build /frontend/dist /app/frontend_dist
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
