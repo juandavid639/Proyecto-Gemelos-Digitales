@@ -23,12 +23,13 @@ import {
 
 const API_BASE_URL = (
   import.meta.env?.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_API_BASE_URL ||
   import.meta.env?.VITE_GEMELO_BASE_URL ||
   ""
 ).replace(/\/$/, "");
 
 if (!API_BASE_URL) {
-  console.error("⚠️ VITE_API_BASE_URL no está definida");
+  console.error("⚠️ Falta definir VITE_API_BASE_URL (o VITE_GEMELO_BASE_URL) en el .env");
 }
 
 function apiUrl(path) {
@@ -300,6 +301,19 @@ const GLOBAL_STYLES = `
   .empty-state-icon { font-size: 32px; opacity: 0.4; }
 `;
 
+function toDate(x) {
+  const d = x ? new Date(x) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+function weeksBetween(start, end) {
+  if (!start || !end) return 0;
+  const ms = Math.max(0, end.getTime() - start.getTime());
+  return ms / (7 * 24 * 60 * 60 * 1000);
+}
+
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
 function injectStyles() {
   if (typeof document === "undefined") return;
   const id = "gemelo-styles";
@@ -350,27 +364,28 @@ const COLORS = {
 };
 
 const STATUS_CONFIG = {
-  solido:           { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
-  "óptimo":         { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
-  optimo:           { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
-  observacion:      { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "Seguimiento" },
+  solido: { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
+  "óptimo": { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
+  optimo: { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Óptimo" },
+  observacion: { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "Seguimiento" },
   "en seguimiento": { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "Seguimiento" },
-  "en desarrollo":  { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "En desarrollo" },
-  critico:          { bg: "var(--critical-bg)", fg: "#B42318", dot: COLORS.critical, label: "Crítico" },
-  cargando:         { bg: "var(--brand-light)", fg: "#1D4ED8", dot: COLORS.brand, label: "Cargando" },
-  pending:          { bg: "var(--pending-bg)", fg: "var(--muted)", dot: COLORS.pending, label: "Pendiente" },
-  alto:             { bg: "var(--critical-bg)", fg: "#B42318", dot: COLORS.critical, label: "Alto" },
-  medio:            { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "Medio" },
-  bajo:             { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Bajo" },
+  "en desarrollo": { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "En desarrollo" },
+  critico: { bg: "var(--critical-bg)", fg: "#B42318", dot: COLORS.critical, label: "Crítico" },
+  cargando: { bg: "var(--brand-light)", fg: "#1D4ED8", dot: COLORS.brand, label: "Cargando" },
+  pending: { bg: "var(--pending-bg)", fg: "var(--muted)", dot: COLORS.pending, label: "Pendiente" },
+  alto: { bg: "var(--critical-bg)", fg: "#B42318", dot: COLORS.critical, label: "Alto" },
+  medio: { bg: "var(--watch-bg)", fg: "#9A3412", dot: COLORS.watch, label: "Medio" },
+  bajo: { bg: "var(--ok-bg)", fg: "#1B5E20", dot: COLORS.ok, label: "Bajo" },
 };
-
 
 /**
  * =========================
  * Helpers
  * =========================
  */
-function normStatus(x) { return String(x || "").toLowerCase().trim(); }
+function normStatus(x) {
+  return String(x || "").toLowerCase().trim();
+}
 
 function colorForRisk(risk) {
   const r = normStatus(risk);
@@ -387,6 +402,13 @@ function colorForPct(pct, thresholds) {
   if (p < Number(thr.critical)) return COLORS.critical;
   if (p < Number(thr.watch)) return COLORS.watch;
   return COLORS.ok;
+}
+
+function contentRhythmStatus(progressRatio) {
+  if (progressRatio == null) return { status: "pending", color: COLORS.pending, bg: "var(--pending-bg)", label: "Pendiente" };
+  if (progressRatio < 0.8) return { status: "critico", color: COLORS.critical, bg: "var(--critical-bg)", label: "Crítico" };
+  if (progressRatio < 1.0) return { status: "observacion", color: COLORS.watch, bg: "var(--watch-bg)", label: "En seguimiento" };
+  return { status: "solido", color: COLORS.ok, bg: "var(--ok-bg)", label: "Óptimo" };
 }
 
 function colorForLearningOutcome(m, thresholds) {
@@ -423,22 +445,36 @@ async function apiGet(path, opts = {}) {
   const res = await fetch(apiUrl(path), {
     method: "GET",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: { "Accept": "application/json", ...(opts.headers || {}) },
     signal: opts.signal,
   });
 
+  const ct = res.headers.get("content-type") || "";
+  const isJson = ct.includes("application/json");
+
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`HTTP ${res.status} - ${txt?.slice?.(0, 600) || txt}`);
+    const body = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => "");
+    const msg = typeof body === "string" ? body : (body?.message || body?.error || JSON.stringify(body));
+    throw new Error(`HTTP ${res.status} - ${String(msg).slice(0, 600)}`);
   }
+
+  if (!isJson) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Respuesta no JSON (${ct}): ${txt.slice(0, 300)}`);
+  }
+
   return res.json();
 }
+
 async function mapLimit(arr, limit, mapper) {
   const list = Array.isArray(arr) ? arr : [];
   const results = new Array(list.length);
   let i = 0;
   const workers = new Array(Math.min(limit, list.length)).fill(null).map(async () => {
-    while (i < list.length) { const idx = i++; results[idx] = await mapper(list[idx], idx); }
+    while (i < list.length) {
+      const idx = i++;
+      results[idx] = await mapper(list[idx], idx);
+    }
   });
   await Promise.all(workers);
   return results;
@@ -447,7 +483,9 @@ async function mapLimit(arr, limit, mapper) {
 function pickCriticalMacroFromGemelo(g) {
   const arr = g?.macro?.units || g?.macroUnits || [];
   if (!Array.isArray(arr) || !arr.length) return null;
-  const copy = arr.map((x) => ({ code: x.code, pct: Number(x.pct ?? x.avgPct ?? 0) })).filter((x) => x.code);
+  const copy = arr
+    .map((x) => ({ code: x.code, pct: Number(x.pct ?? x.avgPct ?? 0) }))
+    .filter((x) => x.code);
   if (!copy.length) return null;
   copy.sort((a, b) => a.pct - b.pct);
   return copy[0];
@@ -457,13 +495,67 @@ function suggestRouteForStudent(s, thresholds) {
   const risk = String(s?.risk || "").toLowerCase();
   const perf = s?.currentPerformancePct != null ? Number(s.currentPerformancePct) : null;
   const cov = s?.coveragePct != null ? Number(s.coveragePct) : null;
-  if (cov != null && cov < 40) return { id: "route_coverage", title: "Ruta 0 — Activar evidencia", summary: "Priorizar calificación de evidencias pendientes.", actions: ["Identificar 1 evidencia crítica y publicarla esta semana", "Acordar fecha de entrega con el estudiante"] };
-  if (risk === "alto") return { id: "route_high_risk", title: "Ruta 1 — Recuperación", summary: "Intervención inmediata con plan corto (7 días).", actions: ["Reunión 1:1 (15 min) para acordar objetivo semanal", "Actividad de refuerzo o re-entrega enfocada en el error", "Retroalimentación concreta + checklist de mejora"] };
+
+  if (cov != null && cov < 40)
+    return {
+      id: "route_coverage",
+      title: "Ruta 0 — Activar evidencia",
+      summary: "Priorizar calificación de evidencias pendientes.",
+      actions: [
+        "Identificar 1 evidencia crítica y publicarla esta semana",
+        "Acordar fecha de entrega con el estudiante",
+      ],
+    };
+
+  if (risk === "alto")
+    return {
+      id: "route_high_risk",
+      title: "Ruta 1 — Recuperación",
+      summary: "Intervención inmediata con plan corto (7 días).",
+      actions: [
+        "Reunión 1:1 (15 min) para acordar objetivo semanal",
+        "Actividad de refuerzo o re-entrega enfocada en el error",
+        "Retroalimentación concreta + checklist de mejora",
+      ],
+    };
+
   if (risk === "medio" || (perf != null && perf < thresholds.watch)) {
     const macro = s?.mostCriticalMacro?.code;
-    return { id: "route_watch", title: "Ruta 2 — Ajuste dirigido", summary: macro ? `Enfoque: ${macro} (${fmtPct(s?.mostCriticalMacro?.pct)})` : "Enfoque: desempeño general", actions: ["Microtarea guiada (30–45 min) sobre el punto débil", "Ejemplo resuelto + plantilla de entrega", "Seguimiento en próxima evidencia"] };
+    return {
+      id: "route_watch",
+      title: "Ruta 2 — Ajuste dirigido",
+      summary: macro ? `Enfoque: ${macro} (${fmtPct(s?.mostCriticalMacro?.pct)})` : "Enfoque: desempeño general",
+      actions: [
+        "Microtarea guiada (30–45 min) sobre el punto débil",
+        "Ejemplo resuelto + plantilla de entrega",
+        "Seguimiento en próxima evidencia",
+      ],
+    };
   }
-  return { id: "route_ok", title: "Ruta 3 — Mantener desempeño", summary: "Sostener ritmo y calidad.", actions: ["Mantener entregas a tiempo", "Extensión opcional: reto avanzado"] };
+
+  return {
+    id: "route_ok",
+    title: "Ruta 3 — Mantener desempeño",
+    summary: "Sostener ritmo y calidad.",
+    actions: ["Mantener entregas a tiempo", "Extensión opcional: reto avanzado"],
+  };
+}
+
+/** Gestión docente: helpers */
+function daysBetween(a, b) {
+  if (!a || !b) return null;
+  const da = new Date(a).getTime();
+  const db = new Date(b).getTime();
+  if (Number.isNaN(da) || Number.isNaN(db)) return null;
+  return Math.floor((db - da) / (1000 * 60 * 60 * 24));
+}
+
+function cadenceStatus(actualCount, expectedMin) {
+  if (actualCount == null || expectedMin == null || expectedMin <= 0) return { status: "pending", label: "Sin datos" };
+  const ratio = Number(actualCount) / Number(expectedMin);
+  if (ratio >= 1) return { status: "solido", label: "Óptimo" };
+  if (ratio >= 0.7) return { status: "observacion", label: "Seguimiento" };
+  return { status: "critico", label: "Crítico" };
 }
 
 /**
@@ -474,7 +566,12 @@ function suggestRouteForStudent(s, thresholds) {
 
 function StatusBadge({ status }) {
   const s = normStatus(status);
-  const cfg = STATUS_CONFIG[s] || { bg: "var(--pending-bg)", fg: "var(--muted)", dot: COLORS.pending, label: status || "—" };
+  const cfg = STATUS_CONFIG[s] || {
+    bg: "var(--pending-bg)",
+    fg: "var(--muted)",
+    dot: COLORS.pending,
+    label: status || "—",
+  };
   return (
     <span className="badge" style={{ background: cfg.bg, color: cfg.fg }}>
       <span className="pulse-dot" style={{ background: cfg.dot, width: 6, height: 6 }} />
@@ -487,8 +584,18 @@ function Card({ title, right, children, className = "", style = {} }) {
   return (
     <div className={`kpi-card ${className}`} style={style}>
       {(title || right) && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>{title}</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>
+            {title}
+          </div>
           <div>{right}</div>
         </div>
       )}
@@ -500,8 +607,23 @@ function Card({ title, right, children, className = "", style = {} }) {
 function Stat({ label, value, sub, valueColor }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 26, color: valueColor || "var(--text)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{value}</div>
+      {label ? (
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--muted)",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            marginBottom: 2,
+          }}
+        >
+          {label}
+        </div>
+      ) : null}
+      <div style={{ fontSize: 26, color: valueColor || "var(--text)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+        {value}
+      </div>
       {sub ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, fontWeight: 500 }}>{sub}</div> : null}
     </div>
   );
@@ -513,12 +635,13 @@ function Divider() {
 
 function ProgressBar({ value, color, showLabel = false, animate = true }) {
   const pct = Math.max(0, Math.min(100, Number(value ?? 0)));
-  // Solo anima en el primer mount; re-renders posteriores (búsqueda, filtros, etc.)
-  // no deben volver a disparar la animación CSS.
   const mountedRef = React.useRef(false);
   const [didMount, setDidMount] = React.useState(false);
   React.useEffect(() => {
-    if (!mountedRef.current) { mountedRef.current = true; setDidMount(true); }
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      setDidMount(true);
+    }
   }, []);
   const shouldAnimate = animate && didMount;
   return (
@@ -536,7 +659,11 @@ function ProgressBar({ value, color, showLabel = false, animate = true }) {
           }}
         />
       </div>
-      {showLabel && <div style={{ position: "absolute", right: 0, top: -18, fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>{fmtPct(pct)}</div>}
+      {showLabel && (
+        <div style={{ position: "absolute", right: 0, top: -18, fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>
+          {fmtPct(pct)}
+        </div>
+      )}
     </div>
   );
 }
@@ -545,16 +672,73 @@ function InfoTooltip({ text }) {
   const [open, setOpen] = React.useState(false);
   if (!String(text || "").trim()) return null;
   return (
-    <span style={{ position: "relative", display: "inline-flex", flex: "0 0 auto" }}
-      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
-      onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+    <span
+      style={{ position: "relative", display: "inline-flex", flex: "0 0 auto" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
     >
-      <span role="button" tabIndex={0} aria-label="Ver descripción" style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 999, alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", color: "var(--muted)", fontSize: 10, fontWeight: 900, cursor: "help", background: "var(--card)", lineHeight: 1 }}>?</span>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="Ver descripción"
+        style={{
+          display: "inline-flex",
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          alignItems: "center",
+          justifyContent: "center",
+          border: "1px solid var(--border)",
+          color: "var(--muted)",
+          fontSize: 10,
+          fontWeight: 900,
+          cursor: "help",
+          background: "var(--card)",
+          lineHeight: 1,
+        }}
+      >
+        ?
+      </span>
       {open && (
-        <div role="tooltip" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", width: "min(300px, 70vw)", zIndex: 9999, background: "var(--card)", border: "1px solid var(--border)", boxShadow: "var(--shadow-lg)", borderRadius: 12, padding: 10, color: "var(--text)", fontSize: 12, fontWeight: 600, lineHeight: 1.4 }}>
+        <div
+          role="tooltip"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "calc(100% + 8px)",
+            width: "min(320px, 75vw)",
+            zIndex: 9999,
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow-lg)",
+            borderRadius: 12,
+            padding: 10,
+            color: "var(--text)",
+            fontSize: 12,
+            fontWeight: 600,
+            lineHeight: 1.4,
+          }}
+        >
           {text}
-          <div style={{ position: "absolute", right: 8, top: -5, width: 9, height: 9, background: "var(--card)", borderLeft: "1px solid var(--border)", borderTop: "1px solid var(--border)", transform: "rotate(45deg)" }} />
+          <div
+            style={{
+              position: "absolute",
+              right: 8,
+              top: -5,
+              width: 9,
+              height: 9,
+              background: "var(--card)",
+              borderLeft: "1px solid var(--border)",
+              borderTop: "1px solid var(--border)",
+              transform: "rotate(45deg)",
+            }}
+          />
         </div>
       )}
     </span>
@@ -563,46 +747,103 @@ function InfoTooltip({ text }) {
 
 function SortTh({ label, active, dir, onClick, title }) {
   return (
-    <th onClick={onClick} title={title} style={{ padding: "10px 10px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: active ? "var(--brand)" : "var(--muted)" }}>
+    <th
+      onClick={onClick}
+      title={title}
+      style={{
+        padding: "10px 10px",
+        cursor: "pointer",
+        userSelect: "none",
+        whiteSpace: "nowrap",
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.05em",
+        color: active ? "var(--brand)" : "var(--muted)",
+      }}
+    >
       {label} {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
     </th>
   );
 }
 
 /**
- * Coverage bars with count
+ * Coverage bars with overdue overlay
+ * - pendingPct: % pendiente
+ * - overduePct: % (del TOTAL) vencido > 8 días sin calificar (se dibuja como overlay sobre pendiente, truncado a pending)
+ * - notSubmittedPct: % no enviado real (si el backend lo manda)
  */
-function CoverageBars({ donePct, pendingPct, notSubmittedPct }) {
+function CoverageBars({ donePct, pendingPct, overduePct, notSubmittedPct }) {
   const d = Math.max(0, Math.min(100, Number(donePct ?? 0)));
   const p = Math.max(0, Math.min(100, Number(pendingPct ?? 0)));
-  // notSubmittedPct: % de asignaciones vencidas sin entrega (no enviado)
+  const ov = overduePct != null ? Math.max(0, Math.min(p, Number(overduePct))) : 0; // overlay no puede exceder pendiente
   const ns = notSubmittedPct != null ? Math.max(0, Math.min(100, Number(notSubmittedPct))) : null;
 
-  const BarRow = ({ label, value, color, tooltip }) => (
+  const StackedBar = ({ basePct, overlayPct, baseColor, overlayColor }) => {
+    const base = Math.max(0, Math.min(100, Number(basePct ?? 0)));
+    const over = Math.max(0, Math.min(base, Number(overlayPct ?? 0)));
+    return (
+      <div
+        style={{
+          height: 8,
+          borderRadius: 999,
+          background: "rgba(148,163,184,0.15)",
+          border: "1px solid var(--border)",
+          overflow: "hidden",
+          position: "relative",
+        }}
+      >
+        <div style={{ width: `${base}%`, height: "100%", background: baseColor, position: "absolute", left: 0, top: 0 }} />
+        <div style={{ width: `${over}%`, height: "100%", background: overlayColor, position: "absolute", left: 0, top: 0 }} />
+      </div>
+    );
+  };
+
+  const BarRow = ({ label, value, color, tooltip, bar }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }} title={tooltip}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", display: "flex", alignItems: "center", gap: 5 }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--muted)",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
           {label}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>{value.toFixed(1)}%</div>
+        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
+          {value.toFixed(1)}%
+        </div>
       </div>
-      {/* animate=false: la barra nunca re-anima en re-renders (búsqueda, filtros, etc.) */}
-      <ProgressBar value={value} color={color} animate={false} />
+      {bar ? bar : <ProgressBar value={value} color={color} animate={false} />}
     </div>
   );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Índice de cumplimiento evaluativo</div>
+      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        Índice de cumplimiento evaluativo
+      </div>
       <BarRow label="Calificado" value={d} color={COLORS.ok} tooltip="Evidencias calificadas sobre el total de ítems del curso" />
-      <BarRow label="Pendiente" value={p} color={COLORS.pending} tooltip="Ítems aún no calificados" />
+      <BarRow
+        label="Pendiente"
+        value={p}
+        color={COLORS.pending}
+        tooltip="Ítems aún no calificados. Segmento rojo: vencidos (>8 días) sin calificar (si el backend lo reporta)."
+        bar={<StackedBar basePct={p} overlayPct={ov} baseColor={COLORS.pending} overlayColor={COLORS.critical} />}
+      />
       {ns != null && (
         <BarRow
           label="No enviado"
           value={ns}
           color={COLORS.critical}
-          tooltip="Asignaciones con fecha de vencimiento pasada donde el estudiante no entregó"
+          tooltip="Asignaciones cerradas con fecha vencida donde el estudiante no entregó (requiere dato de backend)."
         />
       )}
     </div>
@@ -615,15 +856,22 @@ function CoverageBars({ donePct, pendingPct, notSubmittedPct }) {
  * =========================
  */
 function CesaLoader({ title = "Gemelo V. 1.0", subtitle = "Cargando tablero..." }) {
-  React.useEffect(() => { injectStyles(); }, []);
+  React.useEffect(() => {
+    injectStyles();
+  }, []);
   return (
     <div className="cesa-loader-wrap">
       <div className="cesa-loader-card">
-        <div><div className="cesa-loader-title">{title}</div><div className="cesa-loader-sub">{subtitle}</div></div>
+        <div>
+          <div className="cesa-loader-title">{title}</div>
+          <div className="cesa-loader-sub">{subtitle}</div>
+        </div>
         <div className="cesa-loader-center">
           <div className="cesa-water-text" aria-label="Cargando CESA">
             <span className="cesa-water-text__outline">CESA</span>
-            <span className="cesa-water-text__fill" aria-hidden="true">CESA</span>
+            <span className="cesa-water-text__fill" aria-hidden="true">
+              CESA
+            </span>
             <span className="cesa-water-text__wave" aria-hidden="true" />
           </div>
         </div>
@@ -643,7 +891,12 @@ function AlertsPanel({ alerts }) {
   const [open, setOpen] = React.useState(false);
   if (!list.length) return null;
 
-  const sevRank = (s) => { const x = normStatus(s); if (x === "critico") return 0; if (x === "en desarrollo" || x === "en seguimiento" || x === "observacion") return 1; return 2; };
+  const sevRank = (s) => {
+    const x = normStatus(s);
+    if (x === "critico") return 0;
+    if (x === "en desarrollo" || x === "en seguimiento" || x === "observacion") return 1;
+    return 2;
+  };
   const sorted = list.slice().sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
 
   const countBySev = (sev) => sorted.filter((x) => normStatus(x.severity) === sev).length;
@@ -651,11 +904,24 @@ function AlertsPanel({ alerts }) {
   const cObs = sorted.filter((x) => ["en desarrollo", "en seguimiento", "observacion"].includes(normStatus(x.severity))).length;
   const cSol = countBySev("solido");
 
-
   return (
     <Card>
-      <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen((v) => !v); }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: "pointer", userSelect: "none" }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 16 }}>🔭</span>
@@ -663,29 +929,70 @@ function AlertsPanel({ alerts }) {
             <span className="tag">{sorted.length}</span>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {cCrit > 0 && <span className="badge" style={{ background: "var(--critical-bg)", color: "#B42318" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.critical, display: "inline-block" }} />Críticos: {cCrit}</span>}
-            {cObs > 0 && <span className="badge" style={{ background: "var(--watch-bg)", color: "#9A3412" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.watch, display: "inline-block" }} />Seguimiento: {cObs}</span>}
-            {cSol > 0 && <span className="badge" style={{ background: "var(--ok-bg)", color: "#1B5E20" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.ok, display: "inline-block" }} />Óptimos: {cSol}</span>}
+            {cCrit > 0 && (
+              <span className="badge" style={{ background: "var(--critical-bg)", color: "#B42318" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.critical, display: "inline-block" }} />
+                Críticos: {cCrit}
+              </span>
+            )}
+            {cObs > 0 && (
+              <span className="badge" style={{ background: "var(--watch-bg)", color: "#9A3412" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.watch, display: "inline-block" }} />
+                Seguimiento: {cObs}
+              </span>
+            )}
+            {cSol > 0 && (
+              <span className="badge" style={{ background: "var(--ok-bg)", color: "#1B5E20" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.ok, display: "inline-block" }} />
+                Óptimos: {cSol}
+              </span>
+            )}
           </div>
         </div>
-        <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}>{open ? "Ocultar ▴" : "Ver ▾"}</button>
+        <button className="btn" style={{ padding: "6px 12px", fontSize: 12 }}>
+          {open ? "Ocultar ▴" : "Ver ▾"}
+        </button>
       </div>
 
       {open && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           {sorted.map((a) => (
-            <div key={a.id || `${a.title}-${Math.random()}`} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 14, background: "var(--card)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              key={a.id || `${a.title}-${Math.random()}`}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                padding: 14,
+                background: "var(--card)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 13 }}>{a.title || "Alerta"}</div>
                 <StatusBadge status={a.severity} />
               </div>
               {a.message && <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{a.message}</div>}
-              {/* KPIs inline desde el backend */}
               {a.kpis && Object.keys(a.kpis).length > 0 && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
                   {Object.entries(a.kpis).map(([k, v]) => (
-                    <span key={k} style={{ fontSize: 11, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px", fontFamily: "var(--font-mono)", color: "var(--muted)" }}>
-                      {k}: <strong style={{ color: "var(--text)" }}>{typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}</strong>
+                    <span
+                      key={k}
+                      style={{
+                        fontSize: 11,
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        padding: "2px 8px",
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {k}:{" "}
+                      <strong style={{ color: "var(--text)" }}>
+                        {typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}
+                      </strong>
                     </span>
                   ))}
                 </div>
@@ -705,21 +1012,61 @@ function AlertsPanel({ alerts }) {
  */
 function Drawer({ open, onClose, title, children }) {
   React.useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    const handler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
     if (open) document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
   if (!open) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(13,17,23,0.45)", display: "flex", justifyContent: "flex-end", zIndex: 50, backdropFilter: "blur(2px)" }} onClick={onClose}>
-      <div className="drawer-enter" style={{ width: "min(680px, 96vw)", height: "100%", background: "var(--card)", padding: 20, overflow: "auto", borderLeft: "1px solid var(--border)", color: "var(--text)", display: "flex", flexDirection: "column", gap: 0 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(13,17,23,0.45)",
+        display: "flex",
+        justifyContent: "flex-end",
+        zIndex: 50,
+        backdropFilter: "blur(2px)",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="drawer-enter"
+        style={{
+          width: "min(680px, 96vw)",
+          height: "100%",
+          background: "var(--card)",
+          padding: 20,
+          overflow: "auto",
+          borderLeft: "1px solid var(--border)",
+          color: "var(--text)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 16,
+            paddingBottom: 14,
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
           <div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>{title}</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Detalle del gemelo digital · Vista docente</div>
           </div>
-          <button className="btn" onClick={onClose}>✕ Cerrar</button>
+          <button className="btn" onClick={onClose}>
+            ✕ Cerrar
+          </button>
         </div>
         {children}
       </div>
@@ -762,7 +1109,9 @@ function ProjectionBlock({ projection, thresholds }) {
               <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.02em", color: colorForPct(s.projectedFinalPct, thresholds) }}>
                 {fmtGrade10FromPct(s.projectedFinalPct)}
               </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>{meta.sub} · asume {fmtPct(s.assumptionPendingPct)} pendiente</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {meta.sub} · asume {fmtPct(s.assumptionPendingPct)} pendiente
+              </div>
             </div>
           );
         })}
@@ -777,21 +1126,30 @@ function ProjectionBlock({ projection, thresholds }) {
  * =========================
  */
 function QualityFlagsBlock({ flags }) {
-  const list = Array.isArray(flags) ? flags.filter(f => f?.type) : [];
+  const list = Array.isArray(flags) ? flags.filter((f) => f?.type) : [];
   const [open, setOpen] = React.useState(false);
   if (!list.length) return null;
 
-  const relevant = list.filter(f => f.type !== "role_not_enabled");
+  const relevant = list.filter((f) => f.type !== "role_not_enabled");
   if (!relevant.length) return null;
 
   return (
     <Card title={null}>
-      <div role="button" tabIndex={0} onClick={() => setOpen(v => !v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen(v => !v); }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
+        }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14 }}>🔍</span>
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Flags de calidad del modelo</span>
-          <span className="tag" style={{ background: "var(--watch-bg)", color: "var(--watch)" }}>{relevant.length}</span>
+          <span className="tag" style={{ background: "var(--watch-bg)", color: "var(--watch)" }}>
+            {relevant.length}
+          </span>
         </div>
         <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{open ? "▴" : "▾"}</span>
       </div>
@@ -826,8 +1184,15 @@ function PendingItemsBlock({ pendingItems, missingValues }) {
 
   return (
     <Card title={null}>
-      <div role="button" tabIndex={0} onClick={() => setOpen(v => !v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen(v => !v); }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
+        }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14 }}>⏳</span>
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Evidencias pendientes</span>
@@ -840,11 +1205,28 @@ function PendingItemsBlock({ pendingItems, missingValues }) {
         <div style={{ marginTop: 12 }}>
           {topPending.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sin calificar (por peso)</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Sin calificar (por peso)
+              </div>
               {topPending.map((it, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flex: 1, minWidth: 0 }}>{it.name || `Ítem ${it.gradeObjectId}`}</div>
-                  <span className="tag" style={{ background: "var(--watch-bg)", color: "#9A3412", flexShrink: 0 }}>{fmtPct(it.weightPct)} peso</span>
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 10px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flex: 1, minWidth: 0 }}>
+                    {it.name || `Ítem ${it.gradeObjectId}`}
+                  </div>
+                  <span className="tag" style={{ background: "var(--watch-bg)", color: "#9A3412", flexShrink: 0 }}>
+                    {fmtPct(it.weightPct)} peso
+                  </span>
                 </div>
               ))}
               {items.length > 5 && <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", padding: "4px 0" }}>+ {items.length - 5} más</div>}
@@ -852,7 +1234,9 @@ function PendingItemsBlock({ pendingItems, missingValues }) {
           )}
           {missing.length > 0 && (
             <div style={{ marginTop: items.length > 0 ? 12 : 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>No liberados en gradebook ({missing.length})</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                No liberados en gradebook ({missing.length})
+              </div>
               <div style={{ fontSize: 12, color: "var(--muted)" }}>Ítems sin valor visible para el estudiante. Revisar configuración de visibilidad.</div>
             </div>
           )}
@@ -868,11 +1252,11 @@ function PendingItemsBlock({ pendingItems, missingValues }) {
  * =========================
  */
 function EvidencesTimeline({ evidences, thresholds }) {
-  const list = Array.isArray(evidences) ? evidences.filter(e => e.scorePct !== null && e.scorePct !== undefined) : [];
+  const list = Array.isArray(evidences) ? evidences.filter((e) => e.scorePct !== null && e.scorePct !== undefined) : [];
   if (!list.length) return null;
   const [open, setOpen] = React.useState(false);
 
-  const chartData = list.map(e => ({
+  const chartData = list.map((e) => ({
     name: (e.name || "").slice(0, 20),
     pct: Number(e.scorePct ?? 0),
     nota: Number((e.scorePct ?? 0) / 10).toFixed(1),
@@ -880,8 +1264,15 @@ function EvidencesTimeline({ evidences, thresholds }) {
 
   return (
     <Card title={null}>
-      <div role="button" tabIndex={0} onClick={() => setOpen(v => !v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpen(v => !v); }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen((v) => !v);
+        }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14 }}>📋</span>
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Historial de evidencias</span>
@@ -897,8 +1288,8 @@ function EvidencesTimeline({ evidences, thresholds }) {
               <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, "Nota"]} />
+                <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
+                <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, "Desempeño"]} />
                 <ReferenceLine y={Number(thresholds?.watch || 70)} stroke={COLORS.watch} strokeDasharray="4 4" label={{ value: "70%", fill: COLORS.watch, fontSize: 10 }} />
                 <ReferenceLine y={Number(thresholds?.critical || 50)} stroke={COLORS.critical} strokeDasharray="4 4" label={{ value: "50%", fill: COLORS.critical, fontSize: 10 }} />
                 <Line type="monotone" dataKey="pct" stroke={COLORS.brand} strokeWidth={2} dot={{ fill: COLORS.brand, r: 4 }} activeDot={{ r: 6 }} />
@@ -918,8 +1309,16 @@ function EvidencesTimeline({ evidences, thresholds }) {
  */
 function StudentCard({ s, onOpen }) {
   return (
-    <div role="button" tabIndex={0} onClick={() => onOpen(s)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(s); }}
-      className="kpi-card fade-up" style={{ cursor: "pointer" }}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(s)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onOpen(s);
+      }}
+      className="kpi-card fade-up"
+      style={{ cursor: "pointer" }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <div>
           <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 14 }}>{s.displayName}</div>
@@ -934,7 +1333,9 @@ function StudentCard({ s, onOpen }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         <div style={{ textAlign: "center", padding: "8px 4px", background: "var(--bg)", borderRadius: 8 }}>
           <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, marginBottom: 2 }}>NOTA</div>
-          <div style={{ fontWeight: 900, color: colorForPct(s.currentPerformancePct, null), fontSize: 16, fontFamily: "var(--font-mono)" }}>{fmtGrade10FromPct(s.currentPerformancePct)}</div>
+          <div style={{ fontWeight: 900, color: colorForPct(s.currentPerformancePct, null), fontSize: 16, fontFamily: "var(--font-mono)" }}>
+            {fmtGrade10FromPct(s.currentPerformancePct)}
+          </div>
         </div>
         <div style={{ textAlign: "center", padding: "8px 4px", background: "var(--bg)", borderRadius: 8 }}>
           <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, marginBottom: 2 }}>COBERTURA</div>
@@ -954,7 +1355,9 @@ function StudentCard({ s, onOpen }) {
           <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>{s.route?.title || "—"}</div>
           <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500, marginTop: 1 }}>{s.route?.summary}</div>
         </div>
-        <button className="btn" style={{ fontSize: 11, padding: "5px 10px" }} onClick={(e) => { e.stopPropagation(); onOpen(s); }}>Ver gemelo →</button>
+        <button className="btn" style={{ fontSize: 11, padding: "5px 10px" }} onClick={(e) => { e.stopPropagation(); onOpen(s); }}>
+          Ver gemelo →
+        </button>
       </div>
     </div>
   );
@@ -966,7 +1369,9 @@ function StudentCard({ s, onOpen }) {
  * =========================
  */
 export default function App() {
-  React.useEffect(() => { injectStyles(); }, []);
+  React.useEffect(() => {
+    injectStyles();
+  }, []);
 
   const isNarrow = useMediaQuery("(max-width: 900px)");
   const isMobile = useMediaQuery("(max-width: 640px)");
@@ -981,7 +1386,8 @@ export default function App() {
 
   const [outcomesMap, setOutcomesMap] = useState({});
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
-
+  const [contentRoot, setContentRoot] = useState(null);
+  const [contentMetrics, setContentMetrics] = useState(null);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
@@ -1001,7 +1407,6 @@ export default function App() {
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentErr, setStudentErr] = useState("");
 
-  // Active tab in drawer
   const [drawerTab, setDrawerTab] = useState("resumen"); // resumen | evidencias | unidades | prescripcion | calidad
 
   const hideGlobalProgressCol = isNarrow;
@@ -1028,10 +1433,10 @@ export default function App() {
     (async () => {
       try {
         const [ovRes, stRes, raRes, loRes] = await Promise.allSettled([
-          apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/overview`, { signal: controller.signal }),
-          apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal }),
-          apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal }),
-          apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
+          apiGet(`/gemelo/course/${orgUnitId}/overview`, { signal: controller.signal }),
+          apiGet(`/gemelo/course/${orgUnitId}/students?include=summary`, { signal: controller.signal }),
+          apiGet(`/gemelo/course/${orgUnitId}/ra/dashboard`, { signal: controller.signal }),
+          apiGet(`/gemelo/course/${orgUnitId}/learning-outcomes`, { signal: controller.signal }),
         ]);
 
         if (!isMounted) return;
@@ -1062,13 +1467,27 @@ export default function App() {
           }
           setOutcomesMap(map);
         }
-        
+
         const studentItems = (st?.students?.items || st?.items || []).slice();
         const thr = ov?.thresholds || { critical: 50, watch: 70 };
 
         const baseRows = studentItems.map((s) => {
           const userId = s.userId ?? s.UserId ?? s.Identifier;
-          const base = { userId: Number(userId), displayName: s.displayName ?? s.DisplayName ?? "—", roleName: s.roleName ?? "—", isLoading: true, risk: "cargando", globalPct: null, currentPerformancePct: null, coveragePct: null, coverageCountText: null, gradedItemsCount: null, totalItemsCount: null, hasPrescription: false, mostCriticalMacro: null };
+          const base = {
+            userId: Number(userId),
+            displayName: s.displayName ?? s.DisplayName ?? "—",
+            roleName: s.roleName ?? "—",
+            isLoading: true,
+            risk: "cargando",
+            globalPct: null,
+            currentPerformancePct: null,
+            coveragePct: null,
+            coverageCountText: null,
+            gradedItemsCount: null,
+            totalItemsCount: null,
+            hasPrescription: false,
+            mostCriticalMacro: null,
+          };
           base.route = suggestRouteForStudent(base, thr);
           return base;
         });
@@ -1076,7 +1495,12 @@ export default function App() {
         setStudentRows(baseRows);
         setLoading(false);
 
-        const hasInlineSummary = studentItems.length > 0 && (studentItems[0]?.summary || studentItems[0]?.risk || studentItems[0]?.coveragePct != null || studentItems[0]?.currentPerformancePct != null);
+        const hasInlineSummary =
+          studentItems.length > 0 &&
+          (studentItems[0]?.summary ||
+            studentItems[0]?.risk ||
+            studentItems[0]?.coveragePct != null ||
+            studentItems[0]?.currentPerformancePct != null);
 
         if (hasInlineSummary) {
           const details = studentItems.map((s) => {
@@ -1085,7 +1509,21 @@ export default function App() {
             const gradedItemsCount = sum?.gradedItemsCount ?? sum?.coverageGradedCount ?? null;
             const totalItemsCount = sum?.totalItemsCount ?? sum?.coverageTotalCount ?? null;
             const coverageCountText = sum?.coverageCountText ?? (gradedItemsCount != null && totalItemsCount != null ? `${gradedItemsCount}/${totalItemsCount}` : null);
-            const row = { userId: Number(userId), displayName: s.displayName ?? s.DisplayName ?? "—", roleName: s.roleName ?? "—", isLoading: false, risk: sum?.risk || "pending", globalPct: sum?.globalPct ?? null, currentPerformancePct: sum?.currentPerformancePct ?? null, coveragePct: sum?.coveragePct ?? null, gradedItemsCount, totalItemsCount, coverageCountText, hasPrescription: Boolean(sum?.hasPrescription ?? s?.hasPrescription ?? false), mostCriticalMacro: s?.mostCriticalMacro ?? null };
+            const row = {
+              userId: Number(userId),
+              displayName: s.displayName ?? s.DisplayName ?? "—",
+              roleName: s.roleName ?? "—",
+              isLoading: false,
+              risk: sum?.risk || "pending",
+              globalPct: sum?.globalPct ?? null,
+              currentPerformancePct: sum?.currentPerformancePct ?? null,
+              coveragePct: sum?.coveragePct ?? null,
+              gradedItemsCount,
+              totalItemsCount,
+              coverageCountText,
+              hasPrescription: Boolean(sum?.hasPrescription ?? s?.hasPrescription ?? false),
+              mostCriticalMacro: s?.mostCriticalMacro ?? null,
+            };
             row.route = suggestRouteForStudent(row, thr);
             return row;
           });
@@ -1097,18 +1535,41 @@ export default function App() {
         await mapLimit(studentItems, 4, async (s) => {
           const userId = s.userId ?? s.UserId ?? s.Identifier;
           try {
-            const g = await apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal });
+            const g = await apiGet(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal });
             if (!isMounted) return;
             const sum = g?.summary || {};
             const mostCriticalMacro = pickCriticalMacroFromGemelo(g);
             const gradedItemsCount = sum?.gradedItemsCount ?? sum?.coverageGradedCount ?? g?.gradebook?.gradedItemsCount ?? null;
             const totalItemsCount = sum?.totalItemsCount ?? sum?.coverageTotalCount ?? g?.gradebook?.totalItemsCount ?? null;
-            const coverageCountText = sum?.coverageCountText ?? g?.gradebook?.coverageCountText ?? (gradedItemsCount != null && totalItemsCount != null ? `${gradedItemsCount}/${totalItemsCount}` : null);
-            const patch = { isLoading: false, risk: sum?.risk || "pending", globalPct: sum?.globalPct ?? null, currentPerformancePct: sum?.currentPerformancePct ?? null, coveragePct: sum?.coveragePct ?? null, gradedItemsCount, totalItemsCount, coverageCountText, hasPrescription: Array.isArray(g?.prescription) && g.prescription.length > 0, mostCriticalMacro };
-            setStudentRows((prev) => prev.map((row) => { if (row.userId !== Number(userId)) return row; const merged = { ...row, ...patch }; merged.route = suggestRouteForStudent(merged, thr); return merged; }));
+            const coverageCountText =
+              sum?.coverageCountText ??
+              g?.gradebook?.coverageCountText ??
+              (gradedItemsCount != null && totalItemsCount != null ? `${gradedItemsCount}/${totalItemsCount}` : null);
+
+            const patch = {
+              isLoading: false,
+              risk: sum?.risk || "pending",
+              globalPct: sum?.globalPct ?? null,
+              currentPerformancePct: sum?.currentPerformancePct ?? null,
+              coveragePct: sum?.coveragePct ?? null,
+              gradedItemsCount,
+              totalItemsCount,
+              coverageCountText,
+              hasPrescription: Array.isArray(g?.prescription) && g.prescription.length > 0,
+              mostCriticalMacro,
+            };
+
+            setStudentRows((prev) =>
+              prev.map((row) => {
+                if (row.userId !== Number(userId)) return row;
+                const merged = { ...row, ...patch };
+                merged.route = suggestRouteForStudent(merged, thr);
+                return merged;
+              })
+            );
           } catch (e) {
             if (controller.signal.aborted || !isMounted) return;
-            setStudentRows((prev) => prev.map((row) => row.userId === Number(userId) ? { ...row, isLoading: false, risk: "pending" } : row));
+            setStudentRows((prev) => prev.map((row) => (row.userId === Number(userId) ? { ...row, isLoading: false, risk: "pending" } : row)));
           }
         });
       } catch (e) {
@@ -1117,46 +1578,53 @@ export default function App() {
         setLoading(false);
       }
     })();
-    
 
-    return () => { isMounted = false; controller.abort(); };
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, [orgUnitId]);
 
   useEffect(() => {
   if (!orgUnitId) return;
 
-  apiGet(`${GEMELO_API}/brightspace/course/${orgUnitId}`)
+  apiGet(`/brightspace/course/${orgUnitId}`)
     .then(data => setCourseInfo(data))
     .catch(err => console.error("Error cargando curso:", err));
+
+  apiGet(`/brightspace/course/${orgUnitId}/content/root`)
+    .then(data => setContentRoot(data))
+    .catch(err => console.error("Error cargando contenido root:", err));
 }, [orgUnitId]);
 
   /**
    * Load student detail
    */
   useEffect(() => {
-    if (!selectedStudent?.userId) return;
-    let alive = true;
-    const controller = new AbortController();
-    setStudentLoading(true);
-    setStudentErr("");
-    setStudentDetail(null);
-    setDrawerTab("resumen");
+  if (!orgUnitId) return;
 
-    (async () => {
-      try {
-        const g = await apiGet(`${GEMELO_API}/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, { signal: controller.signal });
-        if (!alive) return;
-        setStudentDetail(g);
-      } catch (e) {
-        if (controller.signal.aborted || !alive) return;
-        setStudentErr(String(e?.message || e));
-      } finally {
-        if (!alive) return;
-        setStudentLoading(false);
-      }
-    })();
+  const controller = new AbortController();
 
-    return () => { alive = false; controller.abort(); };
+  (async () => {
+    try {
+      const [c, root] = await Promise.all([
+        apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
+        apiGet(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal }),
+      ]);
+      setCourseInfo(c);
+      setContentRoot(root);
+    } catch (e) {
+      if (controller.signal.aborted) return;
+      console.error("Error cargando curso/contenido:", e);
+      // Si quieres que esto se vea en UI:
+      // setErr(String(e?.message || e));
+    }
+  })();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
   }, [selectedStudent?.userId, orgUnitId]);
 
   const thresholds = overview?.thresholds || { critical: 50, watch: 70 };
@@ -1175,11 +1643,31 @@ export default function App() {
     const descList = flattenOutcomeDescriptions(learningOutcomesPayload);
     if (Array.isArray(ras) && ras.length) {
       const w = 100 / ras.length;
-      return ras.map((r, idx) => ({ code: r.code, name: descList[idx] || r.label || "", description: descList[idx] || "", avgPct: Number(r.avgPct ?? 0), weightPct: w, status: r.status || null, coveragePct: Number(r.coveragePct ?? 0), studentsWithData: Number(r.studentsWithData ?? 0), totalStudents: Number(r.totalStudents ?? 0) }));
+      return ras.map((r, idx) => ({
+        code: r.code,
+        name: descList[idx] || r.label || "",
+        description: descList[idx] || "",
+        avgPct: Number(r.avgPct ?? 0),
+        weightPct: w,
+        status: r.status || null,
+        coveragePct: Number(r.coveragePct ?? 0),
+        studentsWithData: Number(r.studentsWithData ?? 0),
+        totalStudents: Number(r.totalStudents ?? 0),
+      }));
     }
     if (descList.length) {
       const w = 100 / descList.length;
-      return descList.map((d, idx) => ({ code: `LO${idx + 1}`, name: d, description: d, avgPct: 0, weightPct: w, status: null, coveragePct: 0, studentsWithData: 0, totalStudents: 0 }));
+      return descList.map((d, idx) => ({
+        code: `LO${idx + 1}`,
+        name: d,
+        description: d,
+        avgPct: 0,
+        weightPct: w,
+        status: null,
+        coveragePct: 0,
+        studentsWithData: 0,
+        totalStudents: 0,
+      }));
     }
     return [];
   }, [raDashboard, learningOutcomesPayload]);
@@ -1189,38 +1677,22 @@ export default function App() {
   const covDone = avgCov == null ? 0 : Math.max(0, Math.min(100, Number(avgCov)));
   const covPending = Math.max(0, 100 - covDone);
 
-  // "No enviado": % de asignaciones vencidas sin entrega sobre el total de estudiantes.
-  // Se calcula como (promedio de ítems sin entregar con fecha vencida / total ítems) * 100.
-  // Si el backend lo expone directamente lo usamos; si no, estimamos desde missingValues
-  // del overview o dejamos null para no mostrar la barra.
+  // Overdue grading: % del TOTAL con >8 días vencido sin calificar (si el backend lo manda)
+  const overduePct = useMemo(() => {
+    const v = overview?.courseGradebook?.avgOverdueGradingPct;
+    if (v == null) return null;
+    const n = Number(v);
+    if (Number.isNaN(n)) return null;
+    return Math.max(0, Math.min(100, n));
+  }, [overview]);
+
+  // "No enviado" real: mostrar solo si el backend lo expone
   const avgNotSubmittedPct = useMemo(() => {
-    // Intento 1: campo directo del backend
     const direct = overview?.courseGradebook?.avgNotSubmittedPct;
     if (direct != null) return Math.max(0, Math.min(100, Number(direct)));
+    return null;
+  }, [overview]);
 
-    // Intento 2: derivado de gradebook counts cuando hay totales
-    const avgGraded = overview?.courseGradebook?.avgGradedItemsCount;
-    const avgTotal = overview?.courseGradebook?.avgTotalItemsCount;
-    const avgMissing = overview?.courseGradebook?.avgMissingItemsCount; // campo futuro
-    if (avgMissing != null && avgTotal != null && Number(avgTotal) > 0) {
-      return Math.max(0, Math.min(100, (Number(avgMissing) / Number(avgTotal)) * 100));
-    }
-
-    // Intento 3: estimar desde studentRows con los que ya cargaron
-    const loaded = studentRows.filter(s => !s.isLoading && s.totalItemsCount != null && s.totalItemsCount > 0);
-    if (!loaded.length) return null;
-    const sumNotSubmitted = loaded.reduce((acc, s) => {
-      const graded = Number(s.gradedItemsCount ?? 0);
-      const total = Number(s.totalItemsCount ?? 0);
-      if (!total) return acc;
-      // "no enviado" = total - calificados, pero sólo si hay cobertura baja
-      // Aquí usamos covPending como proxy: lo que está pendiente Y vencido no podemos
-      // distinguirlo sin fecha, así que dejamos null si no hay dato directo.
-      return acc;
-    }, 0);
-
-    return null; // sin datos suficientes no mostramos la barra
-  }, [overview, studentRows]);
   const studentsCount = overview?.studentsCount ?? studentsList?.students?.count ?? studentRows.length ?? 0;
   const totalStudents = Number(studentsCount || 0) || 0;
   const rd = overview?.globalRiskDistribution || {};
@@ -1235,12 +1707,33 @@ export default function App() {
       return "solido";
     }
     const rd2 = overview?.globalRiskDistribution || {};
-    const a = Number(rd2.alto || 0), m = Number(rd2.medio || 0), b = Number(rd2.bajo || 0);
+    const a = Number(rd2.alto || 0),
+      m = Number(rd2.medio || 0),
+      b = Number(rd2.bajo || 0);
     if (a >= m && a >= b && a > 0) return "critico";
     if (m >= a && m >= b && m > 0) return "en desarrollo";
     if (b > 0) return "solido";
     return "pending";
   }, [avgPerfPct, thresholds, overview]);
+
+  // Gestión docente (cadencia contenidos)
+  const teacherActivity = overview?.teacherActivity || overview?.courseTeacherActivity || null;
+  const courseStart = teacherActivity?.courseStartDate || courseInfo?.StartDate || courseInfo?.StartDateTime || courseInfo?.Start || null;
+  const courseEnd = teacherActivity?.courseEndDate || courseInfo?.EndDate || courseInfo?.EndDateTime || courseInfo?.End || null;
+  const contentsCreatedCount = teacherActivity?.contentsCreatedCount ?? teacherActivity?.contentItemsCreatedCount ?? null;
+
+  const elapsedDays = useMemo(() => {
+    if (!courseStart) return null;
+    return daysBetween(courseStart, new Date().toISOString());
+  }, [courseStart]);
+
+  const expectedMinContents = useMemo(() => {
+    if (elapsedDays == null) return null;
+    if (elapsedDays < 0) return 0;
+    return Math.floor(elapsedDays / 14) + 1;
+  }, [elapsedDays]);
+
+  const cadence = useMemo(() => cadenceStatus(contentsCreatedCount, expectedMinContents), [contentsCreatedCount, expectedMinContents]);
 
   const filteredStudents = useMemo(() => {
     let list = Array.isArray(studentRows) ? [...studentRows] : [];
@@ -1250,20 +1743,62 @@ export default function App() {
     return list;
   }, [studentRows, query, onlyRisk]);
 
+  const contentKpis = useMemo(() => {
+  const root = Array.isArray(contentRoot) ? contentRoot : [];
+  if (!root.length) return { createdCount: null, minExpected: null, progressRatio: null };
+
+  const start = toDate(courseInfo?.StartDate);
+  const end = toDate(courseInfo?.EndDate);
+  if (!start) return { createdCount: null, minExpected: null, progressRatio: null };
+
+  const now = new Date();
+  const windowEnd = end && end < now ? end : now;
+
+  // Cuenta “actualizado/creado desde inicio”
+  let createdCount = 0;
+
+  for (const mod of root) {
+    const modDate = toDate(mod?.LastModifiedDate);
+    if (modDate && modDate >= start) createdCount += 1;
+
+    const items = Array.isArray(mod?.Structure) ? mod.Structure : [];
+    for (const it of items) {
+      const itDate = toDate(it?.LastModifiedDate);
+      if (itDate && itDate >= start) createdCount += 1;
+    }
+  }
+
+  // Mínimo: 1 contenido / 2 semanas, mínimo 1
+  const weeks = weeksBetween(start, windowEnd);
+  const minExpected = Math.max(1, Math.ceil(weeks / 2));
+
+  const progressRatio = minExpected > 0 ? clamp(createdCount / minExpected, 0, 2) : null;
+
+  return { createdCount, minExpected, progressRatio };
+}, [contentRoot, courseInfo?.StartDate, courseInfo?.EndDate]);
+
   const sortedStudents = useMemo(() => {
     const list = filteredStudents.slice();
     const dir = sortDir === "asc" ? 1 : -1;
     const getVal = (s) => {
       switch (sortKey) {
-        case "userId": return Number(s.userId || 0);
-        case "grade10": return s.currentPerformancePct == null ? -1 : Number(s.currentPerformancePct) / 10;
-        case "coverage": return s.coveragePct == null ? -1 : Number(s.coveragePct);
-        case "risk": { const r = normStatus(s.risk); return r === "alto" ? 0 : r === "medio" ? 1 : r === "bajo" ? 2 : 3; }
-        default: return String(s.displayName || "").toLowerCase();
+        case "userId":
+          return Number(s.userId || 0);
+        case "grade10":
+          return s.currentPerformancePct == null ? -1 : Number(s.currentPerformancePct) / 10;
+        case "coverage":
+          return s.coveragePct == null ? -1 : Number(s.coveragePct);
+        case "risk": {
+          const r = normStatus(s.risk);
+          return r === "alto" ? 0 : r === "medio" ? 1 : r === "bajo" ? 2 : 3;
+        }
+        default:
+          return String(s.displayName || "").toLowerCase();
       }
     };
     list.sort((a, b) => {
-      const va = getVal(a), vb = getVal(b);
+      const va = getVal(a),
+        vb = getVal(b);
       if (typeof va === "string" || typeof vb === "string") return String(va).localeCompare(String(vb), "es", { sensitivity: "base" }) * dir;
       return (Number(va) - Number(vb)) * dir;
     });
@@ -1272,7 +1807,7 @@ export default function App() {
 
   // Derived drawer data
   const drawerSummary = studentDetail?.summary || {};
-  const drawerMacro = (studentDetail?.macroUnits || studentDetail?.macro?.units || []).map(u => ({ code: u.code, pct: Number(u.pct || 0) }));
+  const drawerMacro = (studentDetail?.macroUnits || studentDetail?.macro?.units || []).map((u) => ({ code: u.code, pct: Number(u.pct || 0) }));
   const drawerUnits = studentDetail?.units || [];
   const drawerPrescription = Array.isArray(studentDetail?.prescription) ? studentDetail.prescription : [];
   const drawerProjection = studentDetail?.projection || null;
@@ -1287,18 +1822,22 @@ export default function App() {
   const covText = drawerSummary?.coverageCountText || drawerGradebook?.coverageCountText || (covTotal > 0 ? `${covGraded}/${covTotal}` : null);
   const covMissing = covTotal > 0 ? Math.max(0, covTotal - covGraded) : 0;
 
-  // Drawer tabs config
   const drawerTabs = [
     { id: "resumen", label: "Resumen", icon: "📊" },
     { id: "evidencias", label: "Evidencias", icon: "📋", count: drawerEvidences.length || undefined },
     { id: "unidades", label: "Unidades", icon: "🎯", count: drawerUnits.length || undefined },
     ...(drawerPrescription.length ? [{ id: "prescripcion", label: "Intervención", icon: "💊", count: drawerPrescription.length }] : []),
-    ...(drawerQcFlags.filter(f => f?.type && f.type !== "role_not_enabled").length ? [{ id: "calidad", label: "Calidad", icon: "🔍" }] : []),
+    ...(drawerQcFlags.filter((f) => f?.type && f.type !== "role_not_enabled").length ? [{ id: "calidad", label: "Calidad", icon: "🔍" }] : []),
   ];
 
   const makeSort = (key) => ({
-    active: sortKey === key, dir: sortDir,
-    onClick: () => { const d = sortKey === key && sortDir === "asc" ? "desc" : "asc"; setSortKey(key); setSortDir(d); }
+    active: sortKey === key,
+    dir: sortDir,
+    onClick: () => {
+      const d = sortKey === key && sortDir === "asc" ? "desc" : "asc";
+      setSortKey(key);
+      setSortDir(d);
+    },
   });
 
   if (loading) return <CesaLoader subtitle="Cargando tablero..." />;
@@ -1321,9 +1860,18 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "12px" : "20px" }}>
-
         {/* ── Top Bar ── */}
-        <div className="fade-up" style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: 12, flexDirection: isMobile ? "column" : "row", marginBottom: 20 }}>
+        <div
+          className="fade-up"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: isMobile ? "stretch" : "center",
+            gap: 12,
+            flexDirection: isMobile ? "column" : "row",
+            marginBottom: 20,
+          }}
+        >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>Gemelo Digital</div>
@@ -1331,19 +1879,39 @@ export default function App() {
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
               Curso{" "}
-            <strong style={{ fontFamily: "var(--font-mono)" }}>
-              {courseInfo?.Name || orgUnitId}
-            </strong>
-              {GEMELO_API && <> · <span style={{ fontFamily: "var(--font-mono)" }}>{GEMELO_API}</span></>}
+              <strong style={{ fontFamily: "var(--font-mono)" }}>{courseInfo?.Name || orgUnitId}</strong>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={orgUnitInput} onChange={(e) => setOrgUnitInput(e.target.value)} type="number"
-              style={{ width: 130, border: "1px solid var(--border)", borderRadius: 10, padding: "8px 10px", fontWeight: 700, background: "var(--card)", color: "var(--text)", fontSize: 13 }}
-              placeholder="OrgUnitId" onKeyDown={(e) => { if (e.key === "Enter") { const v = Number(orgUnitInput); if (v > 0) setOrgUnitId(v); }}} />
-            <button className="btn btn-primary" onClick={() => { const v = Number(orgUnitInput); if (v > 0) setOrgUnitId(v); }}>Buscar</button>
-            <button className="btn" onClick={() => setDarkMode((v) => !v)} title="Cambiar tema">{darkMode ? "☀️" : "🌙"}</button>
+            <input
+              value={orgUnitInput}
+              onChange={(e) => setOrgUnitInput(e.target.value)}
+              type="number"
+              style={{
+                width: 130,
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "8px 10px",
+                fontWeight: 700,
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+              }}
+              placeholder="OrgUnitId"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = Number(orgUnitInput);
+                  if (v > 0) setOrgUnitId(v);
+                }
+              }}
+            />
+            <button className="btn btn-primary" onClick={() => { const v = Number(orgUnitInput); if (v > 0) setOrgUnitId(v); }}>
+              Buscar
+            </button>
+            <button className="btn" onClick={() => setDarkMode((v) => !v)} title="Cambiar tema">
+              {darkMode ? "☀️" : "🌙"}
+            </button>
           </div>
         </div>
 
@@ -1353,31 +1921,114 @@ export default function App() {
         </div>
 
         {/* ── KPI Grid ── */}
-        <div className="fade-up fade-up-2" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "2fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-
-          {/* Resumen ejecutivo */}
-          <Card title="Resumen ejecutivo" right={<StatusBadge status={courseStatus} />}>
+        <div
+          className="fade-up fade-up-2"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr 1fr" : "2fr 1fr 1fr 1fr",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          {/* Gestión del curso */}
+          <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />}>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 14 }}>
-              <Stat label="Nota promedio (0–10)"
+              <Stat
+                label="Nota promedio (0–10)"
                 value={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
                 valueColor={colorForPct(avgPerfPct, thresholds)}
-                sub={avgCov == null || Number(avgCov) === 0 ? "Sin cobertura registrada" : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`} />
-              <Stat label="Estudiantes" value={studentsCount}
-                sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`} />
+                sub={avgCov == null || Number(avgCov) === 0 ? "Sin cobertura registrada" : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`}
+              />
+              <Stat label="Estudiantes" value={studentsCount} sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`} />
             </div>
+
             <Divider />
-            <div style={{ marginTop: 14, marginBottom: 14 }}>
-              <Stat label="En riesgo (alto + medio)"
-                value={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
-                valueColor={atRiskPct != null && atRiskPct > 40 ? COLORS.critical : atRiskPct != null && atRiskPct > 20 ? COLORS.watch : COLORS.ok}
-                sub={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes` : "—"} />
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                En riesgo (alto + medio)
+              </div>
+              <InfoTooltip text="Este indicador es un resultado. La gestión del curso se prioriza por acciones docentes: publicación sostenida de contenidos, oportunidad de retroalimentación y cierre evaluativo. Objetivo operativo: mínimo 1 contenido nuevo cada 2 semanas y retroalimentación posterior al vencimiento en máximo 8 días." />
             </div>
+
+            <Stat
+              label=""
+              value={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
+              valueColor={atRiskPct != null && atRiskPct > 40 ? COLORS.critical : atRiskPct != null && atRiskPct > 20 ? COLORS.watch : COLORS.ok}
+              sub={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes` : "—"}
+            />
+
+            {/* Cadencia docente */}
             <Divider />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Ritmo de contenidos del profesor
+            </div>
+            <InfoTooltip text="Se mide por contenidos o módulos actualizados/creados desde el inicio del curso. Meta operativa: mínimo 1 contenido nuevo cada 2 semanas. Esto evita contar importaciones de semestres previos." />
+            <div style={{ marginLeft: "auto" }}>
+              {(() => {
+                const meta = contentRhythmStatus(contentKpis?.progressRatio);
+                return (
+                  <span className="badge" style={{ background: meta.bg, color: meta.color }}>
+                    <span className="pulse-dot" style={{ background: meta.color, width: 6, height: 6 }} />
+                    {meta.label}
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--card)" }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                Contenidos creados
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
+                {contentKpis?.createdCount == null ? "—" : contentKpis.createdCount}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                Desde inicio del curso
+              </div>
+            </div>
+
+            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--card)" }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                Mínimo esperado
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
+                {contentKpis?.minExpected == null ? "—" : contentKpis.minExpected}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                Basado en avance del curso
+              </div>
+            </div>
+          </div>
+
+          {contentKpis?.progressRatio != null && (
+            <div style={{ marginTop: 10 }}>
+              <ProgressBar
+                value={Math.min(100, (contentKpis.progressRatio * 100))}
+                color={contentRhythmStatus(contentKpis.progressRatio).color}
+                animate={false}
+                showLabel={false}
+              />
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                <span>Cumplimiento vs mínimo</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>
+                  {Math.round(contentKpis.progressRatio * 100)}%
+                </span>
+              </div>
+            </div>
+          )}
+
+            <Divider />
+
             <div style={{ marginTop: 14 }}>
-              {avgCov == null || Number(avgCov) === 0
-                ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Cobertura no disponible (sin evidencias calificadas)</div>
-                : <CoverageBars donePct={covDone} pendingPct={covPending} notSubmittedPct={avgNotSubmittedPct} />
-              }
+              {avgCov == null || Number(avgCov) === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Cobertura no disponible (sin evidencias calificadas)</div>
+              ) : (
+                <CoverageBars donePct={covDone} pendingPct={covPending} overduePct={overduePct} notSubmittedPct={avgNotSubmittedPct} />
+              )}
             </div>
           </Card>
 
@@ -1387,9 +2038,17 @@ export default function App() {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie data={riskData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={82} paddingAngle={3}>
-                    {riskData.map((entry) => <Cell key={entry.key} fill={colorForRisk(entry.key)} />)}
+                    {riskData.map((entry) => (
+                      <Cell key={entry.key} fill={colorForRisk(entry.key)} />
+                    ))}
                   </Pie>
-                  <Tooltip formatter={(value) => { const v = Number(value || 0); const pct = totalStudents > 0 ? (v / totalStudents) * 100 : 0; return [`${v} (${pct.toFixed(1)}%)`, "Estudiantes"]; }} />
+                  <Tooltip
+                    formatter={(value) => {
+                      const v = Number(value || 0);
+                      const pct = totalStudents > 0 ? (v / totalStudents) * 100 : 0;
+                      return [`${v} (${pct.toFixed(1)}%)`, "Estudiantes"];
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -1418,13 +2077,21 @@ export default function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="code" tick={{ fontSize: 11, fill: "var(--muted)" }} />
                     <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                    <Tooltip formatter={(value, name, ctx) => {
-                      const pl = ctx?.payload || {};
-                      const extra = pl.coveragePct != null ? ` · Cob: ${Number(pl.coveragePct).toFixed(1)}%` : "";
-                      return [`${Number(value).toFixed(1)}%${extra}`, "Promedio"];
-                    }} labelFormatter={(label) => { const item = learningOutcomesData.find((m) => m.code === label); return item ? `${item.code}${item.name ? ` — ${item.name.slice(0, 40)}` : ""}` : String(label); }} />
+                    <Tooltip
+                      formatter={(value, name, ctx) => {
+                        const pl = ctx?.payload || {};
+                        const extra = pl.coveragePct != null ? ` · Cob: ${Number(pl.coveragePct).toFixed(1)}%` : "";
+                        return [`${Number(value).toFixed(1)}%${extra}`, "Promedio"];
+                      }}
+                      labelFormatter={(label) => {
+                        const item = learningOutcomesData.find((m) => m.code === label);
+                        return item ? `${item.code}${item.name ? ` — ${item.name.slice(0, 40)}` : ""}` : String(label);
+                      }}
+                    />
                     <Bar dataKey="avgPct" name="Promedio" radius={[4, 4, 0, 0]}>
-                      {learningOutcomesData.map((m) => <Cell key={m.code} fill={colorForLearningOutcome(m, thresholds)} />)}
+                      {learningOutcomesData.map((m) => (
+                        <Cell key={m.code} fill={colorForLearningOutcome(m, thresholds)} />
+                      ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -1435,39 +2102,52 @@ export default function App() {
                 </div>
               )}
             </div>
-            {raDashboard?.updatedAt && <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>↺ {String(raDashboard.updatedAt).replace("T", " ").slice(0, 16)}</div>}
+            {raDashboard?.updatedAt && (
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+                ↺ {String(raDashboard.updatedAt).replace("T", " ").slice(0, 16)}
+              </div>
+            )}
           </Card>
 
           {/* Indicador de prioridad */}
           <Card title="Prioridad académica">
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {learningOutcomesData.slice().sort((a, b) => a.avgPct - b.avgPct).slice(0, 3).map((m) => {
-                const computedStatus = m.status || (m.avgPct < thresholds.critical ? "critico" : m.avgPct < thresholds.watch ? "observacion" : "solido");
-                return (
-                  <div key={m.code} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "var(--card)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span className="tag">{m.code}</span>
-                        <InfoTooltip text={(m.description || m.name || "Sin descripción disponible.").trim()} />
-                      </div>
-                      <StatusBadge status={computedStatus} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 900, fontSize: 18, fontFamily: "var(--font-mono)", color: colorForPct(m.avgPct, thresholds) }}>{fmtPct(m.avgPct)}</span>
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}</span>
-                    </div>
-                    {m.coveragePct != null && (
-                      <div style={{ marginTop: 4 }}>
-                        <ProgressBar value={m.coveragePct} color={colorForPct(m.coveragePct, thresholds)} />
-                        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, textAlign: "right" }}>
-                          {fmtPct(m.coveragePct)} · {m.studentsWithData}/{m.totalStudents} estudiantes
+              {learningOutcomesData
+                .slice()
+                .sort((a, b) => a.avgPct - b.avgPct)
+                .slice(0, 3)
+                .map((m) => {
+                  const computedStatus = m.status || (m.avgPct < thresholds.critical ? "critico" : m.avgPct < thresholds.watch ? "observacion" : "solido");
+                  return (
+                    <div key={m.code} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "var(--card)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span className="tag">{m.code}</span>
+                          <InfoTooltip text={(m.description || m.name || "Sin descripción disponible.").trim()} />
                         </div>
+                        <StatusBadge status={computedStatus} />
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-              {!learningOutcomesData.length && <div className="empty-state"><span className="empty-state-icon">🎯</span><span style={{ fontSize: 12 }}>Sin datos de RA</span></div>}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontWeight: 900, fontSize: 18, fontFamily: "var(--font-mono)", color: colorForPct(m.avgPct, thresholds) }}>{fmtPct(m.avgPct)}</span>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}</span>
+                      </div>
+                      {m.coveragePct != null && (
+                        <div style={{ marginTop: 4 }}>
+                          <ProgressBar value={m.coveragePct} color={colorForPct(m.coveragePct, thresholds)} />
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, textAlign: "right" }}>
+                            {fmtPct(m.coveragePct)} · {m.studentsWithData}/{m.totalStudents} estudiantes
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              {!learningOutcomesData.length && (
+                <div className="empty-state">
+                  <span className="empty-state-icon">🎯</span>
+                  <span style={{ fontSize: 12 }}>Sin datos de RA</span>
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -1479,23 +2159,45 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span>Estudiantes</span>
                 <span className="tag">{studentsList?.students?.count ?? studentRows.length ?? 0}</span>
-                {studentRows.some(s => s.isLoading) && <span className="pulse-dot" style={{ background: COLORS.brand, width: 8, height: 8 }} title="Cargando datos..." />}
+                {studentRows.some((s) => s.isLoading) && <span className="pulse-dot" style={{ background: COLORS.brand, width: 8, height: 8 }} title="Cargando datos..." />}
               </div>
             }
             right={
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
-                  <input type="checkbox" checked={onlyRisk} onChange={(e) => setOnlyRisk(e.target.checked)} />Solo en riesgo
+                  <input type="checkbox" checked={onlyRisk} onChange={(e) => setOnlyRisk(e.target.checked)} />
+                  Solo en riesgo
                 </label>
-                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por ID o nombre…"
-                  type="text" style={{ width: isMobile ? "100%" : 220, border: "1px solid var(--border)", borderRadius: 10, padding: "7px 10px", fontWeight: 600, background: "var(--card)", color: "var(--text)", fontSize: 12 }} />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por ID o nombre…"
+                  type="text"
+                  style={{
+                    width: isMobile ? "100%" : 220,
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "7px 10px",
+                    fontWeight: 600,
+                    background: "var(--card)",
+                    color: "var(--text)",
+                    fontSize: 12,
+                  }}
+                />
               </div>
             }
           >
             {useCards ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {sortedStudents.map((s) => <StudentCard key={s.userId} s={s} onOpen={setSelectedStudent} />)}
-                {!sortedStudents.length && <div className="empty-state"><span className="empty-state-icon">🔍</span><span>Sin resultados para el filtro</span></div>}
+                {sortedStudents.map((s) => (
+                  <StudentCard key={s.userId} s={s} onOpen={setSelectedStudent} />
+                ))}
+                {!sortedStudents.length && (
+                  <div className="empty-state">
+                    <span className="empty-state-icon">🔍</span>
+                    <span>Sin resultados para el filtro</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1506,8 +2208,16 @@ export default function App() {
                       <SortTh label="Nombre" {...makeSort("name")} />
                       <SortTh label="Riesgo" {...makeSort("risk")} />
                       <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>Ruta</th>
-                      {!hideCriticalMacroCol && <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>RA crítico</th>}
-                      {!hideGlobalProgressCol && <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>Global</th>}
+                      {!hideCriticalMacroCol && (
+                        <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
+                          RA crítico
+                        </th>
+                      )}
+                      {!hideGlobalProgressCol && (
+                        <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
+                          Global
+                        </th>
+                      )}
                       <SortTh label="Nota" {...makeSort("grade10")} />
                       <SortTh label="Cobertura" {...makeSort("coverage")} title="% del curso con evidencias calificadas" />
                       <th />
@@ -1530,21 +2240,43 @@ export default function App() {
                           {s.route ? (
                             <div>
                               <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>{s.route.title}</div>
-                              <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: compactRouteCol ? 180 : 300 }} title={s.route.summary}>{s.route.summary}</div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--muted)",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  maxWidth: compactRouteCol ? 180 : 300,
+                                }}
+                                title={s.route.summary}
+                              >
+                                {s.route.summary}
+                              </div>
                             </div>
-                          ) : "—"}
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         {!hideCriticalMacroCol && (
                           <td style={{ padding: "10px 10px", minWidth: 90 }}>
                             {s.mostCriticalMacro ? (
                               <div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 800, color: colorForPct(s.mostCriticalMacro.pct, thresholds) }}>{s.mostCriticalMacro.code}</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 800, color: colorForPct(s.mostCriticalMacro.pct, thresholds) }}>
+                                  {s.mostCriticalMacro.code}
+                                </div>
                                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmtPct(s.mostCriticalMacro.pct)}</div>
                               </div>
-                            ) : "—"}
+                            ) : (
+                              "—"
+                            )}
                           </td>
                         )}
-                        {!hideGlobalProgressCol && <td style={{ padding: "10px 10px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{fmtPct(s.globalPct)}</td>}
+                        {!hideGlobalProgressCol && (
+                          <td style={{ padding: "10px 10px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
+                            {fmtPct(s.globalPct)}
+                          </td>
+                        )}
                         <td style={{ padding: "10px 10px" }}>
                           <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 900, color: colorForPct(s.currentPerformancePct, thresholds) }}>
                             {fmtGrade10FromPct(s.currentPerformancePct)}
@@ -1556,12 +2288,18 @@ export default function App() {
                           {s.coveragePct != null && <ProgressBar value={s.coveragePct} color={colorForPct(s.coveragePct, thresholds)} animate={false} />}
                         </td>
                         <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                          <button className="btn" style={{ fontSize: 12, padding: "5px 10px" }} onClick={(e) => { e.stopPropagation(); setSelectedStudent(s); }}>Ver →</button>
+                          <button className="btn" style={{ fontSize: 12, padding: "5px 10px" }} onClick={(e) => { e.stopPropagation(); setSelectedStudent(s); }}>
+                            Ver →
+                          </button>
                         </td>
                       </tr>
                     ))}
                     {!sortedStudents.length && (
-                      <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Sin resultados para el filtro.</td></tr>
+                      <tr>
+                        <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                          Sin resultados para el filtro.
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
@@ -1574,14 +2312,23 @@ export default function App() {
       {/* ── Drawer ── */}
       <Drawer
         open={!!selectedStudent}
-        onClose={() => { setSelectedStudent(null); setStudentDetail(null); setStudentErr(""); setStudentLoading(false); }}
+        onClose={() => {
+          setSelectedStudent(null);
+          setStudentDetail(null);
+          setStudentErr("");
+          setStudentLoading(false);
+        }}
         title={selectedStudent ? `${selectedStudent.displayName}` : "Estudiante"}
       >
         {studentLoading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", paddingTop: 40 }}>
             <div className="cesa-water-text" style={{ fontSize: 36 }}>
-              <span className="cesa-water-text__outline" style={{ fontSize: 36 }}>CESA</span>
-              <span className="cesa-water-text__fill" aria-hidden="true" style={{ fontSize: 36 }}>CESA</span>
+              <span className="cesa-water-text__outline" style={{ fontSize: 36 }}>
+                CESA
+              </span>
+              <span className="cesa-water-text__fill" aria-hidden="true" style={{ fontSize: 36 }}>
+                CESA
+              </span>
               <span className="cesa-water-text__wave" aria-hidden="true" />
             </div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>Consolidando gemelo digital…</div>
@@ -1600,24 +2347,37 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
               <div style={{ textAlign: "center", padding: "12px 8px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Nota</div>
-                <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-0.03em", fontFamily: "var(--font-mono)", color: colorForPct(drawerSummary?.currentPerformancePct, thresholds) }}>{fmtGrade10FromPct(drawerSummary?.currentPerformancePct)}</div>
+                <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-0.03em", fontFamily: "var(--font-mono)", color: colorForPct(drawerSummary?.currentPerformancePct, thresholds) }}>
+                  {fmtGrade10FromPct(drawerSummary?.currentPerformancePct)}
+                </div>
               </div>
               <div style={{ textAlign: "center", padding: "12px 8px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Cobertura</div>
-                <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(drawerSummary?.coveragePct, thresholds) }}>{fmtPct(drawerSummary?.coveragePct)}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{covText || "—"} · faltan {covMissing}</div>
+                <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "var(--font-mono)", color: colorForPct(drawerSummary?.coveragePct, thresholds) }}>
+                  {fmtPct(drawerSummary?.coveragePct)}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  {covText || "—"} · faltan {covMissing}
+                </div>
               </div>
               <div style={{ textAlign: "center", padding: "12px 8px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Riesgo</div>
-                <div style={{ marginTop: 4, display: "flex", justifyContent: "center" }}><StatusBadge status={drawerSummary?.risk || "pending"} /></div>
+                <div style={{ marginTop: 4, display: "flex", justifyContent: "center" }}>
+                  <StatusBadge status={drawerSummary?.risk || "pending"} />
+                </div>
               </div>
             </div>
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
-              {drawerTabs.map(tab => (
+              {drawerTabs.map((tab) => (
                 <button key={tab.id} className={`chip ${drawerTab === tab.id ? "active" : ""}`} onClick={() => setDrawerTab(tab.id)} style={{ fontSize: 12 }}>
-                  {tab.icon} {tab.label} {tab.count != null ? <span className="tag" style={{ fontSize: 10, padding: "1px 6px" }}>{tab.count}</span> : null}
+                  {tab.icon} {tab.label}{" "}
+                  {tab.count != null ? (
+                    <span className="tag" style={{ fontSize: 10, padding: "1px 6px" }}>
+                      {tab.count}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -1625,7 +2385,6 @@ export default function App() {
             {/* Tab: Resumen */}
             {drawerTab === "resumen" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {/* Macro chart */}
                 {drawerMacro.length > 0 && (
                   <Card title="Resultados de aprendizaje" right={<span className="tag">{drawerMacro.length} RAs</span>}>
                     <div style={{ width: "100%", height: 200 }}>
@@ -1638,7 +2397,9 @@ export default function App() {
                           <ReferenceLine y={Number(thresholds?.watch || 70)} stroke={COLORS.watch} strokeDasharray="4 4" />
                           <ReferenceLine y={Number(thresholds?.critical || 50)} stroke={COLORS.critical} strokeDasharray="4 4" />
                           <Bar dataKey="pct" name="Desempeño" radius={[4, 4, 0, 0]}>
-                            {drawerMacro.map((m) => <Cell key={m.code} fill={colorForPct(m?.pct, thresholds)} />)}
+                            {drawerMacro.map((m) => (
+                              <Cell key={m.code} fill={colorForPct(m?.pct, thresholds)} />
+                            ))}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -1646,10 +2407,8 @@ export default function App() {
                   </Card>
                 )}
 
-                {/* Projection */}
                 {drawerProjection && <ProjectionBlock projection={drawerProjection} thresholds={thresholds} />}
 
-                {/* Route */}
                 {selectedStudent?.route && (
                   <Card title={selectedStudent.route.title} right={<StatusBadge status={selectedStudent.risk || "pending"} />}>
                     <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{selectedStudent.route.summary}</div>
@@ -1664,7 +2423,6 @@ export default function App() {
                   </Card>
                 )}
 
-                {/* Pending items summary */}
                 <PendingItemsBlock pendingItems={drawerPendingItems} missingValues={drawerMissingValues} />
               </div>
             )}
@@ -1694,7 +2452,9 @@ export default function App() {
                                 <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 900, color: colorForPct(e.scorePct, thresholds) }}>
                                   {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
                                 </td>
-                                <td style={{ padding: "8px 10px", textAlign: "center" }}><StatusBadge status={e.status || "pending"} /></td>
+                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                  <StatusBadge status={e.status || "pending"} />
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -1749,18 +2509,43 @@ export default function App() {
                 </div>
                 {drawerPrescription.map((p) => (
                   <Card key={p.routeId} title={p.title} right={<span className="tag">{p.routeId}</span>}>
-                    {p.successCriteria && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8 }}>🎯 {p.successCriteria}</div>}
+                    {p.successCriteria && (
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8 }}>
+                        🎯 {p.successCriteria}
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {(p.actions || []).map((a, idx) => (
                         <div key={idx} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                          <span style={{ background: COLORS.brand, color: "#fff", width: 20, height: 20, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, flexShrink: 0, marginTop: 1 }}>{idx + 1}</span>
+                          <span
+                            style={{
+                              background: COLORS.brand,
+                              color: "#fff",
+                              width: 20,
+                              height: 20,
+                              borderRadius: "50%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              flexShrink: 0,
+                              marginTop: 1,
+                            }}
+                          >
+                            {idx + 1}
+                          </span>
                           <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.4 }}>{a}</span>
                         </div>
                       ))}
                     </div>
                     {p.priority?.length > 0 && (
                       <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {p.priority.map((pr) => <span key={pr} className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>{pr}</span>)}
+                        {p.priority.map((pr) => (
+                          <span key={pr} className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>
+                            {pr}
+                          </span>
+                        ))}
                       </div>
                     )}
                   </Card>
