@@ -14,7 +14,6 @@ import {
   Line,
   ReferenceLine,
 } from "recharts";
-
 /**
  * =========================
  * Config
@@ -22,7 +21,6 @@ import {
  */
 
 const API_BASE_URL = (
-  import.meta.env?.VITE_API_BASE_URL ||
   import.meta.env?.VITE_API_BASE_URL ||
   import.meta.env?.VITE_GEMELO_BASE_URL ||
   ""
@@ -40,7 +38,7 @@ const DEFAULT_ORG_UNIT_ID = 29120;
 
 /**
  * =========================
- * CSS injection (tokens + animaciones)
+ * CSS injection
  * =========================
  */
 const GLOBAL_STYLES = `
@@ -95,7 +93,6 @@ const GLOBAL_STYLES = `
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ---- Loader ---- */
   .cesa-loader-wrap {
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -117,7 +114,6 @@ const GLOBAL_STYLES = `
   .cesa-loader-center { margin: 28px 0; }
   .cesa-loader-foot { font-size: 12px; color: var(--muted); }
 
-  /* Water text */
   .cesa-water-text {
     position: relative; display: inline-block;
     font-size: 56px; font-weight: 900; letter-spacing: -2px;
@@ -148,7 +144,6 @@ const GLOBAL_STYLES = `
     to { transform: translateX(33.33%); }
   }
 
-  /* ---- Fade in ---- */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -159,7 +154,6 @@ const GLOBAL_STYLES = `
   .fade-up-3 { animation-delay: 0.15s; }
   .fade-up-4 { animation-delay: 0.2s; }
 
-  /* ---- Pulse dot ---- */
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.85); }
@@ -169,31 +163,26 @@ const GLOBAL_STYLES = `
     border-radius: 50%; animation: pulse 1.4s ease infinite;
   }
 
-  /* ---- Progress bar ---- */
   @keyframes fillBar {
     from { width: 0%; }
     to { width: var(--target-w); }
   }
   .fill-bar { animation: fillBar 0.7s cubic-bezier(.4,0,.2,1) both; animation-delay: 0.2s; }
 
-  /* ---- Drawer ---- */
   .drawer-enter { animation: drawerIn 0.28s cubic-bezier(.4,0,.2,1) both; }
   @keyframes drawerIn {
     from { transform: translateX(40px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
 
-  /* ---- Tooltip row hover ---- */
   .tr-hover { transition: background 0.15s ease; }
   .tr-hover:hover { background: rgba(11,95,255,0.04) !important; }
 
-  /* ---- Scrollbar ---- */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-  /* ---- Badge pill ---- */
   .badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 4px 10px; border-radius: 999px;
@@ -201,7 +190,6 @@ const GLOBAL_STYLES = `
     letter-spacing: 0.01em;
   }
 
-  /* ---- KPI card ---- */
   .kpi-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -212,7 +200,6 @@ const GLOBAL_STYLES = `
   }
   .kpi-card:hover { box-shadow: var(--shadow-lg); }
 
-  /* ---- Tag ---- */
   .tag {
     display: inline-flex; align-items: center;
     padding: 3px 8px; border-radius: 6px;
@@ -222,7 +209,6 @@ const GLOBAL_STYLES = `
     color: var(--brand);
   }
 
-  /* ---- Chip ---- */
   .chip {
     display: inline-flex; align-items: center; gap: 4px;
     border: 1px solid var(--border);
@@ -237,7 +223,6 @@ const GLOBAL_STYLES = `
     background: var(--brand-light);
   }
 
-  /* ---- Button ---- */
   .btn {
     border: 1px solid var(--border);
     background: var(--card);
@@ -257,7 +242,6 @@ const GLOBAL_STYLES = `
   }
   .btn-primary:hover { background: #0A52E0; color: #fff; border-color: #0A52E0; }
 
-  /* ---- Scenario cards ---- */
   .scenario-card {
     border: 1px solid var(--border);
     border-radius: 10px; padding: 12px;
@@ -268,7 +252,6 @@ const GLOBAL_STYLES = `
   .scenario-card.scenario-base { border-color: var(--border); }
   .scenario-card.scenario-improve { border-color: #A9EFC5; background: var(--ok-bg); }
 
-  /* ---- QC flag ---- */
   .qc-flag {
     font-size: 12px; padding: 8px 12px;
     border-radius: 8px; background: var(--pending-bg);
@@ -277,7 +260,6 @@ const GLOBAL_STYLES = `
     color: var(--muted);
   }
 
-  /* ---- Search input ---- */
   input[type="text"], input[type="number"] {
     font-family: var(--font);
     outline: none;
@@ -287,8 +269,23 @@ const GLOBAL_STYLES = `
     border-color: var(--brand) !important;
     box-shadow: 0 0 0 3px rgba(11,95,255,0.12) !important;
   }
+  
+  .scroll-y {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
 
-  /* ---- Empty state ---- */
+  .ra-scroll {
+    max-height: 260px;
+    padding-right: 4px;
+  }
+
+  .ra-priority-scroll {
+    max-height: 380px;
+    padding-right: 4px;
+    overflow-y: auto;
+  }
+
   .empty-state {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 8px;
@@ -299,6 +296,8 @@ const GLOBAL_STYLES = `
     background: var(--card);
   }
   .empty-state-icon { font-size: 32px; opacity: 0.4; }
+
+
 `;
 
 function toDate(x) {
@@ -312,7 +311,9 @@ function weeksBetween(start, end) {
   return ms / (7 * 24 * 60 * 60 * 1000);
 }
 
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
 
 function injectStyles() {
   if (typeof document === "undefined") return;
@@ -335,18 +336,22 @@ function useMediaQuery(query) {
     return window.matchMedia(query).matches;
   };
   const [matches, setMatches] = React.useState(getMatch);
+
   React.useEffect(() => {
     if (!window.matchMedia) return;
     const m = window.matchMedia(query);
     const onChange = () => setMatches(m.matches);
     onChange();
+
     if (m.addEventListener) m.addEventListener("change", onChange);
     else m.addListener(onChange);
+
     return () => {
       if (m.removeEventListener) m.removeEventListener("change", onChange);
       else m.removeListener(onChange);
     };
   }, [query]);
+
   return matches;
 }
 
@@ -405,9 +410,15 @@ function colorForPct(pct, thresholds) {
 }
 
 function contentRhythmStatus(progressRatio) {
-  if (progressRatio == null) return { status: "pending", color: COLORS.pending, bg: "var(--pending-bg)", label: "Pendiente" };
-  if (progressRatio < 0.8) return { status: "critico", color: COLORS.critical, bg: "var(--critical-bg)", label: "Crítico" };
-  if (progressRatio < 1.0) return { status: "observacion", color: COLORS.watch, bg: "var(--watch-bg)", label: "En seguimiento" };
+  if (progressRatio == null) {
+    return { status: "pending", color: COLORS.pending, bg: "var(--pending-bg)", label: "Pendiente" };
+  }
+  if (progressRatio < 0.8) {
+    return { status: "critico", color: COLORS.critical, bg: "var(--critical-bg)", label: "Crítico" };
+  }
+  if (progressRatio < 1.0) {
+    return { status: "observacion", color: COLORS.watch, bg: "var(--watch-bg)", label: "En seguimiento" };
+  }
   return { status: "solido", color: COLORS.ok, bg: "var(--ok-bg)", label: "Óptimo" };
 }
 
@@ -441,20 +452,46 @@ function flattenOutcomeDescriptions(payload) {
   return flat;
 }
 
+function isVisibleContentItem(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.IsHidden === true) return false;
+
+  // En Brightspace content root:
+  // Type 0 = módulo/folder
+  // Type 1 = topic/item
+  // Queremos contar solo contenido real, no módulos.
+  return Number(item.Type) !== 0;
+}
+
+function safeAvg(list) {
+  const nums = (Array.isArray(list) ? list : [])
+    .map((x) => Number(x))
+    .filter((x) => Number.isFinite(x));
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
 async function apiGet(path, opts = {}) {
   const res = await fetch(apiUrl(path), {
     method: "GET",
     credentials: "include",
-    headers: { "Accept": "application/json", ...(opts.headers || {}) },
+    headers: { Accept: "application/json", ...(opts.headers || {}) },
     signal: opts.signal,
   });
 
   const ct = res.headers.get("content-type") || "";
-  const isJson = ct.includes("application/json");
+  const isJson =
+    ct.includes("application/json") ||
+    ct.includes("application/problem+json");
 
   if (!res.ok) {
-    const body = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => "");
-    const msg = typeof body === "string" ? body : (body?.message || body?.error || JSON.stringify(body));
+    const body = isJson
+      ? await res.json().catch(() => ({}))
+      : await res.text().catch(() => "");
+    const msg =
+      typeof body === "string"
+        ? body
+        : body?.detail || body?.message || body?.error || JSON.stringify(body);
     throw new Error(`HTTP ${res.status} - ${String(msg).slice(0, 600)}`);
   }
 
@@ -496,7 +533,7 @@ function suggestRouteForStudent(s, thresholds) {
   const perf = s?.currentPerformancePct != null ? Number(s.currentPerformancePct) : null;
   const cov = s?.coveragePct != null ? Number(s.coveragePct) : null;
 
-  if (cov != null && cov < 40)
+  if (cov != null && cov < 40) {
     return {
       id: "route_coverage",
       title: "Ruta 0 — Activar evidencia",
@@ -506,8 +543,9 @@ function suggestRouteForStudent(s, thresholds) {
         "Acordar fecha de entrega con el estudiante",
       ],
     };
+  }
 
-  if (risk === "alto")
+  if (risk === "alto") {
     return {
       id: "route_high_risk",
       title: "Ruta 1 — Recuperación",
@@ -518,6 +556,7 @@ function suggestRouteForStudent(s, thresholds) {
         "Retroalimentación concreta + checklist de mejora",
       ],
     };
+  }
 
   if (risk === "medio" || (perf != null && perf < thresholds.watch)) {
     const macro = s?.mostCriticalMacro?.code;
@@ -539,23 +578,6 @@ function suggestRouteForStudent(s, thresholds) {
     summary: "Sostener ritmo y calidad.",
     actions: ["Mantener entregas a tiempo", "Extensión opcional: reto avanzado"],
   };
-}
-
-/** Gestión docente: helpers */
-function daysBetween(a, b) {
-  if (!a || !b) return null;
-  const da = new Date(a).getTime();
-  const db = new Date(b).getTime();
-  if (Number.isNaN(da) || Number.isNaN(db)) return null;
-  return Math.floor((db - da) / (1000 * 60 * 60 * 24));
-}
-
-function cadenceStatus(actualCount, expectedMin) {
-  if (actualCount == null || expectedMin == null || expectedMin <= 0) return { status: "pending", label: "Sin datos" };
-  const ratio = Number(actualCount) / Number(expectedMin);
-  if (ratio >= 1) return { status: "solido", label: "Óptimo" };
-  if (ratio >= 0.7) return { status: "observacion", label: "Seguimiento" };
-  return { status: "critico", label: "Crítico" };
 }
 
 /**
@@ -637,13 +659,16 @@ function ProgressBar({ value, color, showLabel = false, animate = true }) {
   const pct = Math.max(0, Math.min(100, Number(value ?? 0)));
   const mountedRef = React.useRef(false);
   const [didMount, setDidMount] = React.useState(false);
+
   React.useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
       setDidMount(true);
     }
   }, []);
+
   const shouldAnimate = animate && didMount;
+
   return (
     <div style={{ position: "relative" }}>
       <div style={{ height: 8, borderRadius: 999, background: "rgba(148,163,184,0.15)", border: "1px solid var(--border)", overflow: "hidden" }}>
@@ -670,50 +695,95 @@ function ProgressBar({ value, color, showLabel = false, animate = true }) {
 
 function InfoTooltip({ text }) {
   const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+
   if (!String(text || "").trim()) return null;
+
+  const updatePos = () => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+
+    const tooltipWidth = Math.min(320, Math.floor(window.innerWidth * 0.75));
+    const left = Math.max(
+      12,
+      Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 12)
+    );
+
+    const tooltipHeightGuess = 90;
+    const top =
+      rect.top > tooltipHeightGuess + 16
+        ? rect.top - tooltipHeightGuess - 10
+        : rect.bottom + 10;
+
+    setPos({ top, left });
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    updatePos();
+    window.addEventListener("scroll", updatePos, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      window.removeEventListener("scroll", updatePos, true);
+      window.removeEventListener("resize", updatePos);
+    };
+  }, [open]);
+
   return (
-    <span
-      style={{ position: "relative", display: "inline-flex", flex: "0 0 auto" }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-      onClick={(e) => {
-        e.stopPropagation();
-        setOpen((v) => !v);
-      }}
-    >
+    <>
       <span
-        role="button"
-        tabIndex={0}
-        aria-label="Ver descripción"
-        style={{
-          display: "inline-flex",
-          width: 16,
-          height: 16,
-          borderRadius: 999,
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1px solid var(--border)",
-          color: "var(--muted)",
-          fontSize: 10,
-          fontWeight: 900,
-          cursor: "help",
-          background: "var(--card)",
-          lineHeight: 1,
+        ref={ref}
+        style={{ position: "relative", display: "inline-flex", flex: "0 0 auto" }}
+        onMouseEnter={() => {
+          updatePos();
+          setOpen(true);
+        }}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => {
+          updatePos();
+          setOpen(true);
+        }}
+        onBlur={() => setOpen(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          updatePos();
+          setOpen((v) => !v);
         }}
       >
-        ?
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Ver descripción"
+          style={{
+            display: "inline-flex",
+            width: 16,
+            height: 16,
+            borderRadius: 999,
+            alignItems: "center",
+            justifyContent: "center",
+            border: "1px solid var(--border)",
+            color: "var(--muted)",
+            fontSize: 10,
+            fontWeight: 900,
+            cursor: "help",
+            background: "var(--card)",
+            lineHeight: 1,
+          }}
+        >
+          ?
+        </span>
       </span>
+
       {open && (
         <div
           role="tooltip"
           style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 8px)",
+            position: "fixed",
+            top: pos.top,
+            left: pos.left,
             width: "min(320px, 75vw)",
-            zIndex: 9999,
+            zIndex: 99999,
             background: "var(--card)",
             border: "1px solid var(--border)",
             boxShadow: "var(--shadow-lg)",
@@ -726,22 +796,9 @@ function InfoTooltip({ text }) {
           }}
         >
           {text}
-          <div
-            style={{
-              position: "absolute",
-              right: 8,
-              top: -5,
-              width: 9,
-              height: 9,
-              background: "var(--card)",
-              borderLeft: "1px solid var(--border)",
-              borderTop: "1px solid var(--border)",
-              transform: "rotate(45deg)",
-            }}
-          />
         </div>
       )}
-    </span>
+    </>
   );
 }
 
@@ -767,39 +824,12 @@ function SortTh({ label, active, dir, onClick, title }) {
   );
 }
 
-/**
- * Coverage bars with overdue overlay
- * - pendingPct: % pendiente
- * - overduePct: % (del TOTAL) vencido > 8 días sin calificar (se dibuja como overlay sobre pendiente, truncado a pending)
- * - notSubmittedPct: % no enviado real (si el backend lo manda)
- */
-function CoverageBars({ donePct, pendingPct, overduePct, notSubmittedPct }) {
+function CoverageBars({ donePct, pendingPct, overduePct }) {
   const d = Math.max(0, Math.min(100, Number(donePct ?? 0)));
   const p = Math.max(0, Math.min(100, Number(pendingPct ?? 0)));
-  const ov = overduePct != null ? Math.max(0, Math.min(p, Number(overduePct))) : 0; // overlay no puede exceder pendiente
-  const ns = notSubmittedPct != null ? Math.max(0, Math.min(100, Number(notSubmittedPct))) : null;
+  const ov = Math.max(0, Math.min(100, Number(overduePct ?? 0)));
 
-  const StackedBar = ({ basePct, overlayPct, baseColor, overlayColor }) => {
-    const base = Math.max(0, Math.min(100, Number(basePct ?? 0)));
-    const over = Math.max(0, Math.min(base, Number(overlayPct ?? 0)));
-    return (
-      <div
-        style={{
-          height: 8,
-          borderRadius: 999,
-          background: "rgba(148,163,184,0.15)",
-          border: "1px solid var(--border)",
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div style={{ width: `${base}%`, height: "100%", background: baseColor, position: "absolute", left: 0, top: 0 }} />
-        <div style={{ width: `${over}%`, height: "100%", background: overlayColor, position: "absolute", left: 0, top: 0 }} />
-      </div>
-    );
-  };
-
-  const BarRow = ({ label, value, color, tooltip, bar }) => (
+  const BarRow = ({ label, value, color, tooltip }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }} title={tooltip}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div
@@ -814,51 +844,76 @@ function CoverageBars({ donePct, pendingPct, overduePct, notSubmittedPct }) {
             gap: 5,
           }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: color,
+              display: "inline-block",
+              flexShrink: 0,
+            }}
+          />
           {label}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--text)",
+            fontWeight: 800,
+            fontFamily: "var(--font-mono)",
+          }}
+        >
           {value.toFixed(1)}%
         </div>
       </div>
-      {bar ? bar : <ProgressBar value={value} color={color} animate={false} />}
+      <ProgressBar value={value} color={color} animate={false} />
     </div>
   );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--muted)",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+        }}
+      >
         Índice de cumplimiento evaluativo
       </div>
-      <BarRow label="Calificado" value={d} color={COLORS.ok} tooltip="Evidencias calificadas sobre el total de ítems del curso" />
+
+      <BarRow
+        label="Calificado"
+        value={d}
+        color={COLORS.ok}
+        tooltip="Evidencias con nota visible sobre el total del curso."
+      />
+
       <BarRow
         label="Pendiente"
         value={p}
         color={COLORS.pending}
-        tooltip="Ítems aún no calificados. Segmento rojo: vencidos (>8 días) sin calificar (si el backend lo reporta)."
-        bar={<StackedBar basePct={p} overlayPct={ov} baseColor={COLORS.pending} overlayColor={COLORS.critical} />}
+        tooltip="Actividades aún sin nota visible y todavía no vencidas."
       />
-      {ns != null && (
-        <BarRow
-          label="No enviado"
-          value={ns}
-          color={COLORS.critical}
-          tooltip="Asignaciones cerradas con fecha vencida donde el estudiante no entregó (requiere dato de backend)."
-        />
-      )}
+
+      <BarRow
+        label="Vencido sin registro"
+        value={ov}
+        color={COLORS.critical}
+        tooltip="Actividades vencidas sin nota visible. Proxy operativo: no distingue todavía entre no entrega y entrega sin calificar."
+      />
     </div>
   );
 }
 
-/**
- * =========================
- * Loader CESA
- * =========================
- */
 function CesaLoader({ title = "Gemelo V. 1.0", subtitle = "Cargando tablero..." }) {
   React.useEffect(() => {
     injectStyles();
   }, []);
+
   return (
     <div className="cesa-loader-wrap">
       <div className="cesa-loader-card">
@@ -881,11 +936,6 @@ function CesaLoader({ title = "Gemelo V. 1.0", subtitle = "Cargando tablero..." 
   );
 }
 
-/**
- * =========================
- * Alerts Panel (Radar docente)
- * =========================
- */
 function AlertsPanel({ alerts }) {
   const list = Array.isArray(alerts) ? alerts : [];
   const [open, setOpen] = React.useState(false);
@@ -897,8 +947,8 @@ function AlertsPanel({ alerts }) {
     if (x === "en desarrollo" || x === "en seguimiento" || x === "observacion") return 1;
     return 2;
   };
-  const sorted = list.slice().sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
 
+  const sorted = list.slice().sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
   const countBySev = (sev) => sorted.filter((x) => normStatus(x.severity) === sev).length;
   const cCrit = countBySev("critico");
   const cObs = sorted.filter((x) => ["en desarrollo", "en seguimiento", "observacion"].includes(normStatus(x.severity))).length;
@@ -989,10 +1039,7 @@ function AlertsPanel({ alerts }) {
                         color: "var(--muted)",
                       }}
                     >
-                      {k}:{" "}
-                      <strong style={{ color: "var(--text)" }}>
-                        {typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}
-                      </strong>
+                      {k}: <strong style={{ color: "var(--text)" }}>{typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}</strong>
                     </span>
                   ))}
                 </div>
@@ -1005,11 +1052,6 @@ function AlertsPanel({ alerts }) {
   );
 }
 
-/**
- * =========================
- * Drawer
- * =========================
- */
 function Drawer({ open, onClose, title, children }) {
   React.useEffect(() => {
     const handler = (e) => {
@@ -1020,6 +1062,7 @@ function Drawer({ open, onClose, title, children }) {
   }, [open, onClose]);
 
   if (!open) return null;
+
   return (
     <div
       style={{
@@ -1074,11 +1117,6 @@ function Drawer({ open, onClose, title, children }) {
   );
 }
 
-/**
- * =========================
- * Projection Scenarios Block
- * =========================
- */
 function ProjectionBlock({ projection, thresholds }) {
   if (!projection || !Array.isArray(projection.scenarios) || !projection.scenarios.length) return null;
 
@@ -1086,7 +1124,9 @@ function ProjectionBlock({ projection, thresholds }) {
     return (
       <Card title="Proyección final" right={<span className="tag">Cobertura 100%</span>}>
         <Stat label="Nota final" value={fmtGrade10FromPct(projection.finalPct)} valueColor={colorForPct(projection.finalPct, thresholds)} />
-        <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>La cobertura del 100% indica que esta es la nota definitiva del curso.</div>
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
+          La cobertura del 100% indica que esta es la nota definitiva del curso.
+        </div>
       </Card>
     );
   }
@@ -1120,11 +1160,6 @@ function ProjectionBlock({ projection, thresholds }) {
   );
 }
 
-/**
- * =========================
- * Quality Flags Block
- * =========================
- */
 function QualityFlagsBlock({ flags }) {
   const list = Array.isArray(flags) ? flags.filter((f) => f?.type) : [];
   const [open, setOpen] = React.useState(false);
@@ -1169,11 +1204,6 @@ function QualityFlagsBlock({ flags }) {
   );
 }
 
-/**
- * =========================
- * Pending Items Block
- * =========================
- */
 function PendingItemsBlock({ pendingItems, missingValues }) {
   const items = Array.isArray(pendingItems) ? pendingItems : [];
   const missing = Array.isArray(missingValues) ? missingValues : [];
@@ -1246,11 +1276,6 @@ function PendingItemsBlock({ pendingItems, missingValues }) {
   );
 }
 
-/**
- * =========================
- * Evidences Timeline
- * =========================
- */
 function EvidencesTimeline({ evidences, thresholds }) {
   const list = Array.isArray(evidences) ? evidences.filter((e) => e.scorePct !== null && e.scorePct !== undefined) : [];
   if (!list.length) return null;
@@ -1259,7 +1284,6 @@ function EvidencesTimeline({ evidences, thresholds }) {
   const chartData = list.map((e) => ({
     name: (e.name || "").slice(0, 20),
     pct: Number(e.scorePct ?? 0),
-    nota: Number((e.scorePct ?? 0) / 10).toFixed(1),
   }));
 
   return (
@@ -1302,11 +1326,6 @@ function EvidencesTimeline({ evidences, thresholds }) {
   );
 }
 
-/**
- * =========================
- * Student card (mobile)
- * =========================
- */
 function StudentCard({ s, onOpen }) {
   return (
     <div
@@ -1369,7 +1388,7 @@ function StudentCard({ s, onOpen }) {
  * =========================
  */
 export default function App() {
-  React.useEffect(() => {
+  useEffect(() => {
     injectStyles();
   }, []);
 
@@ -1386,8 +1405,7 @@ export default function App() {
 
   const [outcomesMap, setOutcomesMap] = useState({});
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
-  const [contentRoot, setContentRoot] = useState(null);
-  const [contentMetrics, setContentMetrics] = useState(null);
+  const [contentRoot, setContentRoot] = useState([]);
   const [overview, setOverview] = useState(null);
   const [studentsList, setStudentsList] = useState(null);
   const [studentRows, setStudentRows] = useState([]);
@@ -1407,7 +1425,7 @@ export default function App() {
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentErr, setStudentErr] = useState("");
 
-  const [drawerTab, setDrawerTab] = useState("resumen"); // resumen | evidencias | unidades | prescripcion | calidad
+  const [drawerTab, setDrawerTab] = useState("resumen");
 
   const hideGlobalProgressCol = isNarrow;
   const hideCriticalMacroCol = isMobile;
@@ -1415,7 +1433,7 @@ export default function App() {
   const useCards = isMobile;
 
   /**
-   * Load course data
+   * Load course overview/student dashboard
    */
   useEffect(() => {
     let isMounted = true;
@@ -1453,6 +1471,7 @@ export default function App() {
         if (loRes.status === "fulfilled") {
           const payload = loRes.value;
           setLearningOutcomesPayload(payload);
+
           const sets = Array.isArray(payload?.outcomeSets) ? payload.outcomeSets : [];
           const map = {};
           for (const set of sets) {
@@ -1461,7 +1480,11 @@ export default function App() {
               const m = desc.match(/^([A-Za-z0-9_.-]+)\s*-\s*(.+)$/);
               if (m) {
                 const code = String(m[1]).toUpperCase();
-                map[code] = { code, description: desc, title: String(m[2] || "").trim() };
+                map[code] = {
+                  code,
+                  description: desc,
+                  title: String(m[2] || "").trim(),
+                };
               }
             }
           }
@@ -1487,6 +1510,7 @@ export default function App() {
             totalItemsCount: null,
             hasPrescription: false,
             mostCriticalMacro: null,
+            notSubmittedWeightPct: null,
           };
           base.route = suggestRouteForStudent(base, thr);
           return base;
@@ -1508,7 +1532,10 @@ export default function App() {
             const sum = s.summary || s;
             const gradedItemsCount = sum?.gradedItemsCount ?? sum?.coverageGradedCount ?? null;
             const totalItemsCount = sum?.totalItemsCount ?? sum?.coverageTotalCount ?? null;
-            const coverageCountText = sum?.coverageCountText ?? (gradedItemsCount != null && totalItemsCount != null ? `${gradedItemsCount}/${totalItemsCount}` : null);
+            const coverageCountText =
+              sum?.coverageCountText ??
+              (gradedItemsCount != null && totalItemsCount != null ? `${gradedItemsCount}/${totalItemsCount}` : null);
+
             const row = {
               userId: Number(userId),
               displayName: s.displayName ?? s.DisplayName ?? "—",
@@ -1523,10 +1550,15 @@ export default function App() {
               coverageCountText,
               hasPrescription: Boolean(sum?.hasPrescription ?? s?.hasPrescription ?? false),
               mostCriticalMacro: s?.mostCriticalMacro ?? null,
+              pendingUngradedCount: sum?.pendingUngradedCount ?? 0,
+              pendingUngradedWeightPct: sum?.pendingUngradedWeightPct ?? 0,
+              overdueUnscoredCount: sum?.overdueUnscoredCount ?? 0,
+              overdueUnscoredWeightPct: sum?.overdueUnscoredWeightPct ?? 0,
             };
             row.route = suggestRouteForStudent(row, thr);
             return row;
           });
+
           if (!isMounted) return;
           setStudentRows(details);
           return;
@@ -1537,6 +1569,7 @@ export default function App() {
           try {
             const g = await apiGet(`/gemelo/course/${orgUnitId}/student/${userId}`, { signal: controller.signal });
             if (!isMounted) return;
+
             const sum = g?.summary || {};
             const mostCriticalMacro = pickCriticalMacroFromGemelo(g);
             const gradedItemsCount = sum?.gradedItemsCount ?? sum?.coverageGradedCount ?? g?.gradebook?.gradedItemsCount ?? null;
@@ -1557,6 +1590,10 @@ export default function App() {
               coverageCountText,
               hasPrescription: Array.isArray(g?.prescription) && g.prescription.length > 0,
               mostCriticalMacro,
+              pendingUngradedCount: sum?.pendingUngradedCount ?? 0,
+              pendingUngradedWeightPct: sum?.pendingUngradedWeightPct ?? 0,
+              overdueUnscoredCount: sum?.overdueUnscoredCount ?? 0,
+              overdueUnscoredWeightPct: sum?.overdueUnscoredWeightPct ?? 0,
             };
 
             setStudentRows((prev) =>
@@ -1567,9 +1604,15 @@ export default function App() {
                 return merged;
               })
             );
-          } catch (e) {
+          } catch {
             if (controller.signal.aborted || !isMounted) return;
-            setStudentRows((prev) => prev.map((row) => (row.userId === Number(userId) ? { ...row, isLoading: false, risk: "pending" } : row)));
+            setStudentRows((prev) =>
+              prev.map((row) =>
+                row.userId === Number(userId)
+                  ? { ...row, isLoading: false, risk: "pending" }
+                  : row
+              )
+            );
           }
         });
       } catch (e) {
@@ -1585,41 +1628,80 @@ export default function App() {
     };
   }, [orgUnitId]);
 
+  /**
+   * Load course info + content root
+   */
   useEffect(() => {
-  if (!orgUnitId) return;
+    if (!orgUnitId) return;
 
-  apiGet(`/brightspace/course/${orgUnitId}`)
-    .then(data => setCourseInfo(data))
-    .catch(err => console.error("Error cargando curso:", err));
+    let alive = true;
+    const controller = new AbortController();
 
-  apiGet(`/brightspace/course/${orgUnitId}/content/root`)
-    .then(data => setContentRoot(data))
-    .catch(err => console.error("Error cargando contenido root:", err));
-}, [orgUnitId]);
+    (async () => {
+      try {
+        const [courseRes, contentRes] = await Promise.allSettled([
+          apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
+          apiGet(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal }),
+        ]);
+
+        if (!alive) return;
+
+        if (courseRes.status === "fulfilled") {
+          setCourseInfo(courseRes.value);
+        } else {
+          console.error("Error cargando curso:", courseRes.reason);
+          setCourseInfo(null);
+        }
+
+        if (contentRes.status === "fulfilled") {
+          setContentRoot(Array.isArray(contentRes.value) ? contentRes.value : []);
+        } else {
+          console.error("Error cargando contenido root:", contentRes.reason);
+          setContentRoot([]);
+        }
+      } catch (e) {
+        if (!alive || controller.signal.aborted) return;
+        console.error("Error cargando curso/contenido:", e);
+        setCourseInfo(null);
+        setContentRoot([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [orgUnitId]);
 
   /**
    * Load student detail
    */
   useEffect(() => {
-  if (!orgUnitId) return;
+    if (!selectedStudent?.userId) return;
 
-  const controller = new AbortController();
+    let alive = true;
+    const controller = new AbortController();
 
-  (async () => {
-    try {
-      const [c, root] = await Promise.all([
-        apiGet(`/brightspace/course/${orgUnitId}`, { signal: controller.signal }),
-        apiGet(`/brightspace/course/${orgUnitId}/content/root`, { signal: controller.signal }),
-      ]);
-      setCourseInfo(c);
-      setContentRoot(root);
-    } catch (e) {
-      if (controller.signal.aborted) return;
-      console.error("Error cargando curso/contenido:", e);
-      // Si quieres que esto se vea en UI:
-      // setErr(String(e?.message || e));
-    }
-  })();
+    setStudentLoading(true);
+    setStudentErr("");
+    setStudentDetail(null);
+    setDrawerTab("resumen");
+
+    (async () => {
+      try {
+        const g = await apiGet(`/gemelo/course/${orgUnitId}/student/${selectedStudent.userId}`, {
+          signal: controller.signal,
+        });
+        if (!alive) return;
+        setStudentDetail(g);
+      } catch (e) {
+        if (controller.signal.aborted || !alive) return;
+        setStudentErr(String(e?.message || e));
+      } finally {
+        if (!alive) return;
+        setStudentLoading(false);
+      }
+    })();
 
     return () => {
       alive = false;
@@ -1639,59 +1721,142 @@ export default function App() {
   }, [overview]);
 
   const learningOutcomesData = useMemo(() => {
-    const ras = raDashboard?.ras;
-    const descList = flattenOutcomeDescriptions(learningOutcomesPayload);
-    if (Array.isArray(ras) && ras.length) {
-      const w = 100 / ras.length;
-      return ras.map((r, idx) => ({
-        code: r.code,
-        name: descList[idx] || r.label || "",
-        description: descList[idx] || "",
+  const ras = Array.isArray(raDashboard?.ras) ? raDashboard.ras : [];
+  const descList = flattenOutcomeDescriptions(learningOutcomesPayload);
+
+  if (ras.length) {
+    const outcomeMap = {};
+    Object.values(outcomesMap || {}).forEach((o) => {
+      if (o?.code) outcomeMap[String(o.code).toUpperCase()] = o;
+    });
+
+    const w = 100 / ras.length;
+
+    return ras.map((r, idx) => {
+      const code = String(r.code || `RA${idx + 1}`).toUpperCase();
+      const match = outcomeMap[code];
+      const fallbackDesc = descList[idx] || "";
+
+      return {
+        code,
+        name: match?.title || r.label || fallbackDesc || code,
+        description: match?.description || fallbackDesc || r.label || code,
         avgPct: Number(r.avgPct ?? 0),
-        weightPct: w,
+        weightPct: Number(r.weightPct ?? w),
         status: r.status || null,
         coveragePct: Number(r.coveragePct ?? 0),
         studentsWithData: Number(r.studentsWithData ?? 0),
         totalStudents: Number(r.totalStudents ?? 0),
-      }));
+      };
+    });
+  }
+
+  if (descList.length) {
+    const w = 100 / descList.length;
+    return descList.map((d, idx) => ({
+      code: `RA${idx + 1}`,
+      name: d,
+      description: d,
+      avgPct: 0,
+      weightPct: w,
+      status: null,
+      coveragePct: 0,
+      studentsWithData: 0,
+      totalStudents: 0,
+    }));
+  }
+
+  return [];
+}, [raDashboard, learningOutcomesPayload, outcomesMap]);
+
+const weakestAssignment = useMemo(() => {
+  const allEvidence = [];
+
+  for (const s of studentRows) {
+    const evs = s?.evidences || s?.gradebook?.evidences || [];
+    for (const ev of evs) {
+      if (ev?.scorePct != null && !Number.isNaN(Number(ev.scorePct))) {
+        allEvidence.push({
+          gradeObjectId: ev.gradeObjectId,
+          name: ev.name || `Ítem ${ev.gradeObjectId}`,
+          scorePct: Number(ev.scorePct),
+        });
+      }
     }
-    if (descList.length) {
-      const w = 100 / descList.length;
-      return descList.map((d, idx) => ({
-        code: `LO${idx + 1}`,
-        name: d,
-        description: d,
-        avgPct: 0,
-        weightPct: w,
-        status: null,
-        coveragePct: 0,
-        studentsWithData: 0,
-        totalStudents: 0,
-      }));
+  }
+
+  if (!allEvidence.length) return null;
+
+  const byItem = {};
+  for (const ev of allEvidence) {
+    const key = String(ev.gradeObjectId);
+    if (!byItem[key]) {
+      byItem[key] = {
+        gradeObjectId: ev.gradeObjectId,
+        name: ev.name,
+        values: [],
+      };
     }
-    return [];
-  }, [raDashboard, learningOutcomesPayload]);
+    byItem[key].values.push(ev.scorePct);
+  }
+
+  const summary = Object.values(byItem).map((it) => {
+    const avg = it.values.reduce((a, b) => a + b, 0) / it.values.length;
+    return {
+      gradeObjectId: it.gradeObjectId,
+      name: it.name,
+      avgPct: avg,
+      count: it.values.length,
+    };
+  });
+
+  summary.sort((a, b) => a.avgPct - b.avgPct);
+  return summary[0] || null;
+}, [studentRows]);
+
+  const weakestMacro = useMemo(() => {
+  if (!Array.isArray(learningOutcomesData) || !learningOutcomesData.length) return null;
+
+  const valid = learningOutcomesData
+    .filter((m) => m && m.avgPct != null && !Number.isNaN(Number(m.avgPct)))
+    .map((m) => ({
+      ...m,
+      avgPct: Number(m.avgPct),
+      coveragePct: Number(m.coveragePct ?? 0),
+      studentsWithData: Number(m.studentsWithData ?? 0),
+      totalStudents: Number(m.totalStudents ?? 0),
+    }));
+
+  if (!valid.length) return null;
+
+  valid.sort((a, b) => a.avgPct - b.avgPct);
+  return valid[0];
+}, [learningOutcomesData]);
 
   const avgPerfPct = overview?.courseGradebook?.avgCurrentPerformancePct ?? null;
   const avgCov = overview?.courseGradebook?.avgCoveragePct ?? null;
   const covDone = avgCov == null ? 0 : Math.max(0, Math.min(100, Number(avgCov)));
-  const covPending = Math.max(0, 100 - covDone);
 
-  // Overdue grading: % del TOTAL con >8 días vencido sin calificar (si el backend lo manda)
-  const overduePct = useMemo(() => {
-    const v = overview?.courseGradebook?.avgOverdueGradingPct;
-    if (v == null) return null;
-    const n = Number(v);
-    if (Number.isNaN(n)) return null;
-    return Math.max(0, Math.min(100, n));
+  const avgPendingUngradedPct = useMemo(() => {
+    const direct = overview?.courseGradebook?.avgPendingUngradedPct;
+    if (direct != null && !Number.isNaN(Number(direct))) {
+      return Math.max(0, Math.min(100, Number(direct)));
+    }
+    return 0;
   }, [overview]);
 
-  // "No enviado" real: mostrar solo si el backend lo expone
-  const avgNotSubmittedPct = useMemo(() => {
-    const direct = overview?.courseGradebook?.avgNotSubmittedPct;
-    if (direct != null) return Math.max(0, Math.min(100, Number(direct)));
-    return null;
+  const avgOverdueUnscoredPct = useMemo(() => {
+    const direct = overview?.courseGradebook?.avgOverdueUnscoredPct;
+    if (direct != null && !Number.isNaN(Number(direct))) {
+      return Math.max(0, Math.min(100, Number(direct)));
+    }
+    return 0;
   }, [overview]);
+
+  const covPending = Math.max(
+    0,
+    Math.min(100, avgPendingUngradedPct + avgOverdueUnscoredPct)
+  );
 
   const studentsCount = overview?.studentsCount ?? studentsList?.students?.count ?? studentRows.length ?? 0;
   const totalStudents = Number(studentsCount || 0) || 0;
@@ -1707,79 +1872,102 @@ export default function App() {
       return "solido";
     }
     const rd2 = overview?.globalRiskDistribution || {};
-    const a = Number(rd2.alto || 0),
-      m = Number(rd2.medio || 0),
-      b = Number(rd2.bajo || 0);
+    const a = Number(rd2.alto || 0);
+    const m = Number(rd2.medio || 0);
+    const b = Number(rd2.bajo || 0);
     if (a >= m && a >= b && a > 0) return "critico";
     if (m >= a && m >= b && m > 0) return "en desarrollo";
     if (b > 0) return "solido";
     return "pending";
   }, [avgPerfPct, thresholds, overview]);
 
-  // Gestión docente (cadencia contenidos)
-  const teacherActivity = overview?.teacherActivity || overview?.courseTeacherActivity || null;
-  const courseStart = teacherActivity?.courseStartDate || courseInfo?.StartDate || courseInfo?.StartDateTime || courseInfo?.Start || null;
-  const courseEnd = teacherActivity?.courseEndDate || courseInfo?.EndDate || courseInfo?.EndDateTime || courseInfo?.End || null;
-  const contentsCreatedCount = teacherActivity?.contentsCreatedCount ?? teacherActivity?.contentItemsCreatedCount ?? null;
-
-  const elapsedDays = useMemo(() => {
-    if (!courseStart) return null;
-    return daysBetween(courseStart, new Date().toISOString());
-  }, [courseStart]);
-
-  const expectedMinContents = useMemo(() => {
-    if (elapsedDays == null) return null;
-    if (elapsedDays < 0) return 0;
-    return Math.floor(elapsedDays / 14) + 1;
-  }, [elapsedDays]);
-
-  const cadence = useMemo(() => cadenceStatus(contentsCreatedCount, expectedMinContents), [contentsCreatedCount, expectedMinContents]);
-
   const filteredStudents = useMemo(() => {
     let list = Array.isArray(studentRows) ? [...studentRows] : [];
     if (onlyRisk) list = list.filter((s) => ["alto", "medio"].includes(normStatus(s.risk)));
     const q = query.trim().toLowerCase();
-    if (q) list = list.filter((s) => String(s.userId).includes(q) || String(s.displayName || "").toLowerCase().includes(q));
+    if (q) {
+      list = list.filter(
+        (s) =>
+          String(s.userId).includes(q) ||
+          String(s.displayName || "").toLowerCase().includes(q)
+      );
+    }
     return list;
   }, [studentRows, query, onlyRisk]);
 
-  const contentKpis = useMemo(() => {
-  const root = Array.isArray(contentRoot) ? contentRoot : [];
-  if (!root.length) return { createdCount: null, minExpected: null, progressRatio: null };
+const contentKpis = useMemo(() => {
+    const root = Array.isArray(contentRoot) ? contentRoot : [];
+    if (!root.length) {
+      return { createdCount: null, minExpected: null, progressRatio: null };
+    }
 
-  const start = toDate(courseInfo?.StartDate);
-  const end = toDate(courseInfo?.EndDate);
-  if (!start) return { createdCount: null, minExpected: null, progressRatio: null };
+    const start = toDate(courseInfo?.StartDate);
+    const end = toDate(courseInfo?.EndDate);
+    if (!start) {
+      return { createdCount: null, minExpected: null, progressRatio: null };
+    }
 
-  const now = new Date();
-  const windowEnd = end && end < now ? end : now;
+    const now = new Date();
+    const windowEnd = end && end < now ? end : now;
 
-  // Cuenta “actualizado/creado desde inicio”
-  let createdCount = 0;
+    let createdCount = 0;
 
-  for (const mod of root) {
-    const modDate = toDate(mod?.LastModifiedDate);
-    if (modDate && modDate >= start) createdCount += 1;
+    for (const mod of root) {
+      if (mod?.IsHidden === true) continue;
 
-    const items = Array.isArray(mod?.Structure) ? mod.Structure : [];
-    for (const it of items) {
-      const itDate = toDate(it?.LastModifiedDate);
-      if (itDate && itDate >= start) createdCount += 1;
+      const items = Array.isArray(mod?.Structure) ? mod.Structure : [];
+      for (const it of items) {
+        const isVisible = it?.IsHidden !== true;
+        const isLeafContent = Number(it?.Type) === 1; // no contar módulos/folders
+        const itDate = toDate(it?.LastModifiedDate);
+
+        if (isVisible && isLeafContent && itDate && itDate >= start) {
+          createdCount += 1;
+        }
+      }
+    }
+
+    const weeks = weeksBetween(start, windowEnd);
+    const minExpected = Math.max(1, Math.ceil(weeks / 2));
+    const progressRatio = minExpected > 0 ? clamp(createdCount / minExpected, 0, 2) : null;
+
+    return { createdCount, minExpected, progressRatio };
+  }, [contentRoot, courseInfo?.StartDate, courseInfo?.EndDate]);
+
+  const contentRhythmMeta = useMemo(() => {
+    return contentRhythmStatus(contentKpis?.progressRatio);
+  }, [contentKpis]);
+  const performanceBands = useMemo(() => {
+  const bands = [
+    { name: "Excelente", key: "excellent", value: 0, color: COLORS.ok },
+    { name: "Sólido", key: "solid", value: 0, color: COLORS.brand },
+    { name: "Seguimiento", key: "watch", value: 0, color: COLORS.watch },
+    { name: "Crítico", key: "critical", value: 0, color: COLORS.critical },
+    { name: "Sin datos", key: "pending", value: 0, color: COLORS.pending },
+  ];
+
+  for (const s of studentRows) {
+    const p = s?.currentPerformancePct;
+    if (p == null || Number.isNaN(Number(p))) {
+      bands[4].value += 1;
+    } else if (Number(p) >= 85) {
+      bands[0].value += 1;
+    } else if (Number(p) >= 70) {
+      bands[1].value += 1;
+    } else if (Number(p) >= 50) {
+      bands[2].value += 1;
+    } else {
+      bands[3].value += 1;
     }
   }
 
-  // Mínimo: 1 contenido / 2 semanas, mínimo 1
-  const weeks = weeksBetween(start, windowEnd);
-  const minExpected = Math.max(1, Math.ceil(weeks / 2));
-
-  const progressRatio = minExpected > 0 ? clamp(createdCount / minExpected, 0, 2) : null;
-
-  return { createdCount, minExpected, progressRatio };
-}, [contentRoot, courseInfo?.StartDate, courseInfo?.EndDate]);
+  return bands;
+}, [studentRows]);
 
   const sortedStudents = useMemo(() => {
     const list = filteredStudents.slice();
     const dir = sortDir === "asc" ? 1 : -1;
+
     const getVal = (s) => {
       switch (sortKey) {
         case "userId":
@@ -1796,18 +1984,24 @@ export default function App() {
           return String(s.displayName || "").toLowerCase();
       }
     };
+
     list.sort((a, b) => {
-      const va = getVal(a),
-        vb = getVal(b);
-      if (typeof va === "string" || typeof vb === "string") return String(va).localeCompare(String(vb), "es", { sensitivity: "base" }) * dir;
+      const va = getVal(a);
+      const vb = getVal(b);
+      if (typeof va === "string" || typeof vb === "string") {
+        return String(va).localeCompare(String(vb), "es", { sensitivity: "base" }) * dir;
+      }
       return (Number(va) - Number(vb)) * dir;
     });
+
     return list;
   }, [filteredStudents, sortKey, sortDir]);
 
-  // Derived drawer data
   const drawerSummary = studentDetail?.summary || {};
-  const drawerMacro = (studentDetail?.macroUnits || studentDetail?.macro?.units || []).map((u) => ({ code: u.code, pct: Number(u.pct || 0) }));
+  const drawerMacro = (studentDetail?.macroUnits || studentDetail?.macro?.units || []).map((u) => ({
+    code: u.code,
+    pct: Number(u.pct || 0),
+  }));
   const drawerUnits = studentDetail?.units || [];
   const drawerPrescription = Array.isArray(studentDetail?.prescription) ? studentDetail.prescription : [];
   const drawerProjection = studentDetail?.projection || null;
@@ -1816,18 +2010,26 @@ export default function App() {
   const drawerPendingItems = Array.isArray(drawerGradebook?.pendingItems) ? drawerGradebook.pendingItems : [];
   const drawerMissingValues = Array.isArray(drawerGradebook?.missingValues) ? drawerGradebook.missingValues : [];
   const drawerQcFlags = Array.isArray(studentDetail?.qualityFlags) ? studentDetail.qualityFlags : [];
-
+  const drawerPendingUngradedPct = Number(drawerSummary?.pendingUngradedWeightPct ?? 0);
+  const drawerOverdueUnscoredPct = Number(drawerSummary?.overdueUnscoredWeightPct ?? 0);
   const covGraded = Number(drawerSummary?.gradedItemsCount ?? drawerGradebook?.gradedItemsCount ?? 0) || 0;
   const covTotal = Number(drawerSummary?.totalItemsCount ?? drawerGradebook?.totalItemsCount ?? 0) || 0;
-  const covText = drawerSummary?.coverageCountText || drawerGradebook?.coverageCountText || (covTotal > 0 ? `${covGraded}/${covTotal}` : null);
+  const covText =
+    drawerSummary?.coverageCountText ||
+    drawerGradebook?.coverageCountText ||
+    (covTotal > 0 ? `${covGraded}/${covTotal}` : null);
   const covMissing = covTotal > 0 ? Math.max(0, covTotal - covGraded) : 0;
 
   const drawerTabs = [
     { id: "resumen", label: "Resumen", icon: "📊" },
     { id: "evidencias", label: "Evidencias", icon: "📋", count: drawerEvidences.length || undefined },
     { id: "unidades", label: "Unidades", icon: "🎯", count: drawerUnits.length || undefined },
-    ...(drawerPrescription.length ? [{ id: "prescripcion", label: "Intervención", icon: "💊", count: drawerPrescription.length }] : []),
-    ...(drawerQcFlags.filter((f) => f?.type && f.type !== "role_not_enabled").length ? [{ id: "calidad", label: "Calidad", icon: "🔍" }] : []),
+    ...(drawerPrescription.length
+      ? [{ id: "prescripcion", label: "Intervención", icon: "💊", count: drawerPrescription.length }]
+      : []),
+    ...(drawerQcFlags.filter((f) => f?.type && f.type !== "role_not_enabled").length
+      ? [{ id: "calidad", label: "Calidad", icon: "🔍" }]
+      : []),
   ];
 
   const makeSort = (key) => ({
@@ -1860,7 +2062,6 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "12px" : "20px" }}>
-        {/* ── Top Bar ── */}
         <div
           className="fade-up"
           style={{
@@ -1874,12 +2075,23 @@ export default function App() {
         >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>Gemelo Digital</div>
+              <div
+                style={{
+                  fontSize: isMobile ? 18 : 22,
+                  fontWeight: 900,
+                  color: "var(--text)",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Gemelo Digital
+              </div>
               <span className="tag">Vista Docente</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
               Curso{" "}
-              <strong style={{ fontFamily: "var(--font-mono)" }}>{courseInfo?.Name || orgUnitId}</strong>
+              <strong style={{ fontFamily: "var(--font-mono)" }}>
+                {courseInfo?.Name || orgUnitId}
+              </strong>
             </div>
           </div>
 
@@ -1906,7 +2118,13 @@ export default function App() {
                 }
               }}
             />
-            <button className="btn btn-primary" onClick={() => { const v = Number(orgUnitInput); if (v > 0) setOrgUnitId(v); }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const v = Number(orgUnitInput);
+                if (v > 0) setOrgUnitId(v);
+              }}
+            >
               Buscar
             </button>
             <button className="btn" onClick={() => setDarkMode((v) => !v)} title="Cambiar tema">
@@ -1915,12 +2133,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Radar docente ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 12 }}>
           <AlertsPanel alerts={overview?.alerts} />
         </div>
 
-        {/* ── KPI Grid ── */}
         <div
           className="fade-up fade-up-2"
           style={{
@@ -1930,22 +2146,44 @@ export default function App() {
             marginBottom: 12,
           }}
         >
-          {/* Gestión del curso */}
           <Card title="Gestión del curso" right={<StatusBadge status={courseStatus} />}>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 14 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                gap: 16,
+                marginBottom: 14,
+              }}
+            >
               <Stat
                 label="Nota promedio (0–10)"
                 value={avgPerfPct == null || Number(avgPerfPct) === 0 ? "—" : fmtGrade10FromPct(avgPerfPct)}
                 valueColor={colorForPct(avgPerfPct, thresholds)}
-                sub={avgCov == null || Number(avgCov) === 0 ? "Sin cobertura registrada" : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`}
+                sub={
+                  avgCov == null || Number(avgCov) === 0
+                    ? "Sin cobertura registrada"
+                    : `${fmtPct(covDone)} calificado · ${fmtPct(covPending)} pendiente`
+                }
               />
-              <Stat label="Estudiantes" value={studentsCount} sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`} />
+              <Stat
+                label="Estudiantes"
+                value={studentsCount}
+                sub={`${overview?.courseGradebook?.avgGradedItemsCount ?? 0}/${overview?.courseGradebook?.avgTotalItemsCount ?? 0} ítems prom.`}
+              />
             </div>
 
             <Divider />
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--muted)",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
                 En riesgo (alto + medio)
               </div>
               <InfoTooltip text="Este indicador es un resultado. La gestión del curso se prioriza por acciones docentes: publicación sostenida de contenidos, oportunidad de retroalimentación y cierre evaluativo. Objetivo operativo: mínimo 1 contenido nuevo cada 2 semanas y retroalimentación posterior al vencimiento en máximo 8 días." />
@@ -1954,90 +2192,155 @@ export default function App() {
             <Stat
               label=""
               value={atRiskPct == null ? "—" : fmtPct(atRiskPct)}
-              valueColor={atRiskPct != null && atRiskPct > 40 ? COLORS.critical : atRiskPct != null && atRiskPct > 20 ? COLORS.watch : COLORS.ok}
+              valueColor={
+                atRiskPct != null && atRiskPct > 40
+                  ? COLORS.critical
+                  : atRiskPct != null && atRiskPct > 20
+                  ? COLORS.watch
+                  : COLORS.ok
+              }
               sub={totalStudents ? `${atRiskCount} de ${totalStudents} estudiantes` : "—"}
             />
 
-            {/* Cadencia docente */}
             <Divider />
+
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Ritmo de contenidos del profesor
-            </div>
-            <InfoTooltip text="Se mide por contenidos o módulos actualizados/creados desde el inicio del curso. Meta operativa: mínimo 1 contenido nuevo cada 2 semanas. Esto evita contar importaciones de semestres previos." />
-            <div style={{ marginLeft: "auto" }}>
-              {(() => {
-                const meta = contentRhythmStatus(contentKpis?.progressRatio);
-                return (
-                  <span className="badge" style={{ background: meta.bg, color: meta.color }}>
-                    <span className="pulse-dot" style={{ background: meta.color, width: 6, height: 6 }} />
-                    {meta.label}
-                  </span>
-                );
-              })()}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--card)" }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                Contenidos creados
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--muted)",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Ritmo de contenidos del profesor
               </div>
-              <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                {contentKpis?.createdCount == null ? "—" : contentKpis.createdCount}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                Desde inicio del curso
-              </div>
-            </div>
-
-            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--card)" }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                Mínimo esperado
-              </div>
-              <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
-                {contentKpis?.minExpected == null ? "—" : contentKpis.minExpected}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                Basado en avance del curso
-              </div>
-            </div>
-          </div>
-
-          {contentKpis?.progressRatio != null && (
-            <div style={{ marginTop: 10 }}>
-              <ProgressBar
-                value={Math.min(100, (contentKpis.progressRatio * 100))}
-                color={contentRhythmStatus(contentKpis.progressRatio).color}
-                animate={false}
-                showLabel={false}
-              />
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                <span>Cumplimiento vs mínimo</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>
-                  {Math.round(contentKpis.progressRatio * 100)}%
+              <InfoTooltip text="Se mide el contenido o módulo actualizados/creados desde el inicio del curso." />
+              <div style={{ marginLeft: "auto" }}>
+                <span
+                  className="badge"
+                  style={{ background: contentRhythmMeta.bg, color: contentRhythmMeta.color }}
+                >
+                  <span
+                    className="pulse-dot"
+                    style={{ background: contentRhythmMeta.color, width: 6, height: 6 }}
+                  />
+                  {contentRhythmMeta.label}
                 </span>
               </div>
             </div>
-          )}
+
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+              <div
+                style={{
+                  padding: 12,
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  background: "var(--card)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--muted)",
+                    fontWeight: 800,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Contenidos creados
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
+                  {contentKpis?.createdCount == null ? "—" : contentKpis.createdCount}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  Desde inicio del curso
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 12,
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  background: "var(--card)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--muted)",
+                    fontWeight: 800,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Mínimo esperado
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>
+                  {contentKpis?.minExpected == null ? "—" : contentKpis.minExpected}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  Basado en avance del curso
+                </div>
+              </div>
+            </div>
+
+            {contentKpis?.progressRatio != null && (
+              <div style={{ marginTop: 10 }}>
+                <ProgressBar
+                  value={Math.min(100, contentKpis.progressRatio * 100)}
+                  color={contentRhythmMeta.color}
+                  animate={false}
+                  showLabel={false}
+                />
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--muted)",
+                    marginTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Cumplimiento vs mínimo</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800 }}>
+                    {Math.round(contentKpis.progressRatio * 100)}%
+                  </span>
+                </div>
+              </div>
+            )}
 
             <Divider />
 
             <div style={{ marginTop: 14 }}>
               {avgCov == null || Number(avgCov) === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Cobertura no disponible (sin evidencias calificadas)</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  Cobertura no disponible (sin evidencias calificadas)
+                </div>
               ) : (
-                <CoverageBars donePct={covDone} pendingPct={covPending} overduePct={overduePct} notSubmittedPct={avgNotSubmittedPct} />
+                <CoverageBars
+                  donePct={covDone}
+                  pendingPct={avgPendingUngradedPct}
+                  overduePct={avgOverdueUnscoredPct}
+                />
               )}
             </div>
           </Card>
 
-          {/* Riesgo */}
           <Card title="Riesgo académico">
             <div style={{ width: "100%", height: 200 }}>
               <ResponsiveContainer>
                 <PieChart>
-                  <Pie data={riskData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={82} paddingAngle={3}>
+                  <Pie
+                    data={riskData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={55}
+                    outerRadius={82}
+                    paddingAngle={3}
+                  >
                     {riskData.map((entry) => (
                       <Cell key={entry.key} fill={colorForRisk(entry.key)} />
                     ))}
@@ -2052,85 +2355,195 @@ export default function App() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
+
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {riskData.map((r) => {
                 const count = Number(r.value || 0);
                 const pct = totalStudents > 0 ? (count / totalStudents) * 100 : 0;
                 return (
                   <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: colorForRisk(r.key), flexShrink: 0 }} />
-                    <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, fontFamily: "var(--font-mono)", color: colorForRisk(r.key) }}>{count}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", width: 44, textAlign: "right" }}>{pct.toFixed(1)}%</div>
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: colorForRisk(r.key),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, fontSize: 12, color: "var(--text)", fontWeight: 600 }}>
+                      {r.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        fontFamily: "var(--font-mono)",
+                        color: colorForRisk(r.key),
+                      }}
+                    >
+                      {count}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", width: 44, textAlign: "right" }}>
+                      {pct.toFixed(1)}%
+                    </div>
                   </div>
                 );
               })}
             </div>
           </Card>
 
-          {/* Resultados de aprendizaje */}
-          <Card title="Resultados de aprendizaje">
-            <div style={{ width: "100%", height: 200 }}>
-              {learningOutcomesData?.length ? (
-                <ResponsiveContainer>
-                  <BarChart data={learningOutcomesData} margin={{ bottom: 0, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="code" tick={{ fontSize: 11, fill: "var(--muted)" }} />
-                    <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                    <Tooltip
-                      formatter={(value, name, ctx) => {
-                        const pl = ctx?.payload || {};
-                        const extra = pl.coveragePct != null ? ` · Cob: ${Number(pl.coveragePct).toFixed(1)}%` : "";
-                        return [`${Number(value).toFixed(1)}%${extra}`, "Promedio"];
-                      }}
-                      labelFormatter={(label) => {
-                        const item = learningOutcomesData.find((m) => m.code === label);
-                        return item ? `${item.code}${item.name ? ` — ${item.name.slice(0, 40)}` : ""}` : String(label);
-                      }}
+          <Card title="Foco académico del curso">
+            {weakestMacro ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, height: "100%" }}>
+                <div
+                  style={{
+                    padding: 14,
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    background: "var(--card)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span className="tag">{weakestMacro.code}</span>
+                    <StatusBadge
+                      status={
+                        weakestMacro.avgPct < thresholds.critical
+                          ? "critico"
+                          : weakestMacro.avgPct < thresholds.watch
+                          ? "observacion"
+                          : "solido"
+                      }
                     />
-                    <Bar dataKey="avgPct" name="Promedio" radius={[4, 4, 0, 0]}>
-                      {learningOutcomesData.map((m) => (
-                        <Cell key={m.code} fill={colorForLearningOutcome(m, thresholds)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="empty-state" style={{ height: "100%" }}>
-                  <span className="empty-state-icon">📊</span>
-                  <span style={{ fontSize: 12 }}>Sin resultados de aprendizaje configurados</span>
+                  </div>
+
+                  <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
+                    Resultado de aprendizaje con menor desempeño
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 34,
+                      fontWeight: 900,
+                      fontFamily: "var(--font-mono)",
+                      color: colorForPct(weakestMacro.avgPct, thresholds),
+                      marginTop: 6,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {fmtPct(weakestMacro.avgPct)}
+                  </div>
+
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, lineHeight: 1.45 }}>
+                    {(weakestMacro.description || weakestMacro.name || "Sin descripción").slice(0, 140)}
+                  </div>
+
+                  <div style={{ marginTop: 10 }}>
+                    <ProgressBar
+                      value={weakestMacro.avgPct}
+                      color={colorForPct(weakestMacro.avgPct, thresholds)}
+                      animate={false}
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", textAlign: "right" }}>
+                    Cobertura {fmtPct(weakestMacro.coveragePct)} · {weakestMacro.studentsWithData}/{weakestMacro.totalStudents} estudiantes
+                  </div>
                 </div>
-              )}
-            </div>
-            {raDashboard?.updatedAt && (
-              <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
-                ↺ {String(raDashboard.updatedAt).replace("T", " ").slice(0, 16)}
+
+                <div
+                  style={{
+                    marginTop: "auto",
+                    fontSize: 11,
+                    color: "var(--muted)",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  ↺{" "}
+                  {raDashboard?.updatedAt
+                    ? String(raDashboard.updatedAt).replace("T", " ").slice(0, 16)
+                    : "Sin actualización"}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state" style={{ height: "100%" }}>
+                <span className="empty-state-icon">🎯</span>
+                <span style={{ fontSize: 12 }}>Sin información consolidada</span>
               </div>
             )}
           </Card>
 
-          {/* Indicador de prioridad */}
           <Card title="Prioridad académica">
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                maxHeight: 540,
+                overflowY: "auto",
+                paddingRight: 4,
+              }}
+            >
               {learningOutcomesData
                 .slice()
                 .sort((a, b) => a.avgPct - b.avgPct)
-                .slice(0, 3)
                 .map((m) => {
-                  const computedStatus = m.status || (m.avgPct < thresholds.critical ? "critico" : m.avgPct < thresholds.watch ? "observacion" : "solido");
+                  const computedStatus =
+                    m.status ||
+                    (m.avgPct < thresholds.critical
+                      ? "critico"
+                      : m.avgPct < thresholds.watch
+                      ? "observacion"
+                      : "solido");
+
                   return (
-                    <div key={m.code} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "var(--card)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div
+                      key={m.code}
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        padding: 10,
+                        background: "var(--card)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 4,
+                        }}
+                      >
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span className="tag">{m.code}</span>
                           <InfoTooltip text={(m.description || m.name || "Sin descripción disponible.").trim()} />
                         </div>
                         <StatusBadge status={computedStatus} />
                       </div>
+
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontWeight: 900, fontSize: 18, fontFamily: "var(--font-mono)", color: colorForPct(m.avgPct, thresholds) }}>{fmtPct(m.avgPct)}</span>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}</span>
+                        <span
+                          style={{
+                            fontWeight: 900,
+                            fontSize: 18,
+                            fontFamily: "var(--font-mono)",
+                            color: colorForPct(m.avgPct, thresholds),
+                          }}
+                        >
+                          {fmtPct(m.avgPct)}
+                        </span>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                          Peso {m.weightPct ? `${Number(m.weightPct).toFixed(0)}%` : "—"}
+                        </span>
                       </div>
+
                       {m.coveragePct != null && (
                         <div style={{ marginTop: 4 }}>
                           <ProgressBar value={m.coveragePct} color={colorForPct(m.coveragePct, thresholds)} />
@@ -2142,6 +2555,7 @@ export default function App() {
                     </div>
                   );
                 })}
+
               {!learningOutcomesData.length && (
                 <div className="empty-state">
                   <span className="empty-state-icon">🎯</span>
@@ -2152,19 +2566,34 @@ export default function App() {
           </Card>
         </div>
 
-        {/* ── Students Table ── */}
         <div className="fade-up fade-up-3">
           <Card
             title={
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span>Estudiantes</span>
                 <span className="tag">{studentsList?.students?.count ?? studentRows.length ?? 0}</span>
-                {studentRows.some((s) => s.isLoading) && <span className="pulse-dot" style={{ background: COLORS.brand, width: 8, height: 8 }} title="Cargando datos..." />}
+                {studentRows.some((s) => s.isLoading) && (
+                  <span
+                    className="pulse-dot"
+                    style={{ background: COLORS.brand, width: 8, height: 8 }}
+                    title="Cargando datos..."
+                  />
+                )}
               </div>
             }
             right={
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
                   <input type="checkbox" checked={onlyRisk} onChange={(e) => setOnlyRisk(e.target.checked)} />
                   Solo en riesgo
                 </label>
@@ -2207,14 +2636,43 @@ export default function App() {
                       <SortTh label="ID" {...makeSort("userId")} />
                       <SortTh label="Nombre" {...makeSort("name")} />
                       <SortTh label="Riesgo" {...makeSort("risk")} />
-                      <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>Ruta</th>
+                      <th
+                        style={{
+                          padding: "10px 10px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        Ruta
+                      </th>
                       {!hideCriticalMacroCol && (
-                        <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
+                        <th
+                          style={{
+                            padding: "10px 10px",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            color: "var(--muted)",
+                          }}
+                        >
                           RA crítico
                         </th>
                       )}
                       {!hideGlobalProgressCol && (
-                        <th style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
+                        <th
+                          style={{
+                            padding: "10px 10px",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            color: "var(--muted)",
+                          }}
+                        >
                           Global
                         </th>
                       )}
@@ -2225,12 +2683,31 @@ export default function App() {
                   </thead>
                   <tbody>
                     {sortedStudents.map((s) => (
-                      <tr key={s.userId} onClick={() => setSelectedStudent(s)} className="tr-hover" style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
-                        <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{s.userId}</td>
+                      <tr
+                        key={s.userId}
+                        onClick={() => setSelectedStudent(s)}
+                        className="tr-hover"
+                        style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
+                      >
+                        <td
+                          style={{
+                            padding: "10px 10px",
+                            fontWeight: 700,
+                            color: "var(--muted)",
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 12,
+                          }}
+                        >
+                          {s.userId}
+                        </td>
                         <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--text)", minWidth: 180 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             {s.displayName}
-                            {s.hasPrescription && <span title="Tiene prescripción activa" style={{ fontSize: 14 }}>📋</span>}
+                            {s.hasPrescription && (
+                              <span title="Tiene prescripción activa" style={{ fontSize: 14 }}>
+                                📋
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={{ padding: "10px 10px" }}>
@@ -2239,7 +2716,9 @@ export default function App() {
                         <td style={{ padding: "10px 10px", maxWidth: compactRouteCol ? 200 : 320, minWidth: 160 }}>
                           {s.route ? (
                             <div>
-                              <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>{s.route.title}</div>
+                              <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>
+                                {s.route.title}
+                              </div>
                               <div
                                 style={{
                                   fontSize: 11,
@@ -2262,10 +2741,19 @@ export default function App() {
                           <td style={{ padding: "10px 10px", minWidth: 90 }}>
                             {s.mostCriticalMacro ? (
                               <div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 800, color: colorForPct(s.mostCriticalMacro.pct, thresholds) }}>
+                                <div
+                                  style={{
+                                    fontFamily: "var(--font-mono)",
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    color: colorForPct(s.mostCriticalMacro.pct, thresholds),
+                                  }}
+                                >
                                   {s.mostCriticalMacro.code}
                                 </div>
-                                <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmtPct(s.mostCriticalMacro.pct)}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                  {fmtPct(s.mostCriticalMacro.pct)}
+                                </div>
                               </div>
                             ) : (
                               "—"
@@ -2273,27 +2761,60 @@ export default function App() {
                           </td>
                         )}
                         {!hideGlobalProgressCol && (
-                          <td style={{ padding: "10px 10px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
+                          <td
+                            style={{
+                              padding: "10px 10px",
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: "var(--text)",
+                            }}
+                          >
                             {fmtPct(s.globalPct)}
                           </td>
                         )}
                         <td style={{ padding: "10px 10px" }}>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 900, color: colorForPct(s.currentPerformancePct, thresholds) }}>
+                          <div
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 16,
+                              fontWeight: 900,
+                              color: colorForPct(s.currentPerformancePct, thresholds),
+                            }}
+                          >
                             {fmtGrade10FromPct(s.currentPerformancePct)}
                           </div>
                         </td>
                         <td style={{ padding: "10px 10px", minWidth: 110 }}>
-                          <div style={{ fontWeight: 800, fontSize: 13, fontFamily: "var(--font-mono)" }}>{fmtPct(s.coveragePct)}</div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>{s.coverageCountText || "—"}</div>
-                          {s.coveragePct != null && <ProgressBar value={s.coveragePct} color={colorForPct(s.coveragePct, thresholds)} animate={false} />}
+                          <div style={{ fontWeight: 800, fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                            {fmtPct(s.coveragePct)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
+                            {s.coverageCountText || "—"}
+                          </div>
+                          {s.coveragePct != null && (
+                            <ProgressBar
+                              value={s.coveragePct}
+                              color={colorForPct(s.coveragePct, thresholds)}
+                              animate={false}
+                            />
+                          )}
                         </td>
                         <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                          <button className="btn" style={{ fontSize: 12, padding: "5px 10px" }} onClick={(e) => { e.stopPropagation(); setSelectedStudent(s); }}>
+                          <button
+                            className="btn"
+                            style={{ fontSize: 12, padding: "5px 10px" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedStudent(s);
+                            }}
+                          >
                             Ver →
                           </button>
                         </td>
                       </tr>
                     ))}
+
                     {!sortedStudents.length && (
                       <tr>
                         <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
@@ -2309,7 +2830,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Drawer ── */}
       <Drawer
         open={!!selectedStudent}
         onClose={() => {
@@ -2323,12 +2843,8 @@ export default function App() {
         {studentLoading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", paddingTop: 40 }}>
             <div className="cesa-water-text" style={{ fontSize: 36 }}>
-              <span className="cesa-water-text__outline" style={{ fontSize: 36 }}>
-                CESA
-              </span>
-              <span className="cesa-water-text__fill" aria-hidden="true" style={{ fontSize: 36 }}>
-                CESA
-              </span>
+              <span className="cesa-water-text__outline" style={{ fontSize: 36 }}>CESA</span>
+              <span className="cesa-water-text__fill" aria-hidden="true" style={{ fontSize: 36 }}>CESA</span>
               <span className="cesa-water-text__wave" aria-hidden="true" />
             </div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>Consolidando gemelo digital…</div>
@@ -2343,7 +2859,6 @@ export default function App() {
           </Card>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Student KPI strip */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
               <div style={{ textAlign: "center", padding: "12px 8px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Nota</div>
@@ -2368,7 +2883,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tabs */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
               {drawerTabs.map((tab) => (
                 <button key={tab.id} className={`chip ${drawerTab === tab.id ? "active" : ""}`} onClick={() => setDrawerTab(tab.id)} style={{ fontSize: 12 }}>
@@ -2382,23 +2896,22 @@ export default function App() {
               ))}
             </div>
 
-            {/* Tab: Resumen */}
             {drawerTab === "resumen" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {drawerMacro.length > 0 && (
-                  <Card title="Resultados de aprendizaje" right={<span className="tag">{drawerMacro.length} RAs</span>}>
-                    <div style={{ width: "100%", height: 200 }}>
+                  <Card title="Resultados de aprendizaje del estudiante">
+                    <div style={{ width: "100%", height: 220 }}>
                       <ResponsiveContainer>
-                        <BarChart data={drawerMacro} margin={{ left: -20 }}>
+                        <BarChart data={drawerMacro} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis dataKey="code" tick={{ fontSize: 11, fill: "var(--muted)" }} />
                           <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: "var(--muted)" }} />
-                          <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, "Desempeño"]} />
+                          <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Desempeño"]} />
                           <ReferenceLine y={Number(thresholds?.watch || 70)} stroke={COLORS.watch} strokeDasharray="4 4" />
                           <ReferenceLine y={Number(thresholds?.critical || 50)} stroke={COLORS.critical} strokeDasharray="4 4" />
-                          <Bar dataKey="pct" name="Desempeño" radius={[4, 4, 0, 0]}>
-                            {drawerMacro.map((m) => (
-                              <Cell key={m.code} fill={colorForPct(m?.pct, thresholds)} />
+                          <Bar dataKey="pct" radius={[6, 6, 0, 0]}>
+                            {drawerMacro.map((item) => (
+                              <Cell key={item.code} fill={colorForPct(item.pct, thresholds)} />
                             ))}
                           </Bar>
                         </BarChart>
@@ -2427,7 +2940,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab: Evidencias */}
             {drawerTab === "evidencias" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {drawerEvidences.length > 0 ? (
@@ -2447,8 +2959,12 @@ export default function App() {
                           <tbody>
                             {drawerEvidences.map((e, i) => (
                               <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                                <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{e.name || `Ítem ${e.gradeObjectId}`}</td>
-                                <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>{fmtPct(e.weightPct)}</td>
+                                <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                                  {e.name || `Ítem ${e.gradeObjectId}`}
+                                </td>
+                                <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                                  {fmtPct(e.weightPct)}
+                                </td>
                                 <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 900, color: colorForPct(e.scorePct, thresholds) }}>
                                   {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
                                 </td>
@@ -2466,13 +2982,14 @@ export default function App() {
                   <div className="empty-state">
                     <span className="empty-state-icon">📭</span>
                     <span>Sin evidencias calificadas disponibles</span>
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Los ítems del gradebook aún no tienen nota registrada.</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      Los ítems del gradebook aún no tienen nota registrada.
+                    </span>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Tab: Unidades */}
             {drawerTab === "unidades" && (
               <Card title="Subcompetencias / Unidades">
                 {drawerUnits.length > 0 ? (
@@ -2484,7 +3001,9 @@ export default function App() {
                           <StatusBadge status={u.status} />
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 18, fontWeight: 900, color: colorForPct(u.pct, thresholds) }}>{fmtPct(u.pct)}</div>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 18, fontWeight: 900, color: colorForPct(u.pct, thresholds) }}>
+                            {fmtPct(u.pct)}
+                          </div>
                           <div style={{ fontSize: 11, color: "var(--muted)" }}>{(u.evidence || []).length} evidencias</div>
                         </div>
                         <ProgressBar value={u.pct} color={colorForPct(u.pct, thresholds)} />
@@ -2495,13 +3014,14 @@ export default function App() {
                   <div className="empty-state">
                     <span className="empty-state-icon">🎯</span>
                     <span>Sin unidades consolidadas</span>
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Posible falta de rúbricas evaluadas o mapeadas.</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      Posible falta de rúbricas evaluadas o mapeadas.
+                    </span>
                   </div>
                 )}
               </Card>
             )}
 
-            {/* Tab: Prescripción */}
             {drawerTab === "prescripcion" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ background: "var(--watch-bg)", border: "1px solid #FED7AA", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#9A3412" }}>
@@ -2553,7 +3073,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab: Calidad */}
             {drawerTab === "calidad" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>
