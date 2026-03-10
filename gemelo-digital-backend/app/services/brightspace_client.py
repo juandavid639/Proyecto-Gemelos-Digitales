@@ -98,6 +98,41 @@ class BrightspaceClient:
         url = f"{self.base_url}/d2l/api/le/{self.lp_version}/{orgUnitId}/dropbox/folders/"
         return await self._request_json("GET", url)
 
+    async def list_dropbox_submissions_for_user(
+        self,
+        orgUnitId: int,
+        folderId: int,
+        userId: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retorna la lista de entregas del estudiante en una carpeta de dropbox.
+        GET /d2l/api/le/{lp_version}/{orgUnitId}/dropbox/folders/{folderId}/submissions/
+        Filtra por userId en el campo EntityId o UserId de cada submission.
+
+        Brightspace devuelve:
+          [ { "Id": ..., "EntityId": <userId>, "Files": [...],
+              "SubmissionDate": "2025-03-01T...", ... }, ... ]
+
+        Si el endpoint no existe o devuelve 404/403 se captura externamente.
+        """
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.lp_version}/{orgUnitId}"
+            f"/dropbox/folders/{int(folderId)}/submissions/"
+        )
+        data = await self._request_json("GET", url)
+        items = self._as_list_of_dicts(data)
+
+        # Filtrar por el estudiante
+        result = []
+        for sub in items:
+            entity_id = sub.get("EntityId") or sub.get("UserId") or sub.get("userId")
+            try:
+                if int(entity_id) == int(userId):
+                    result.append(sub)
+            except Exception:
+                continue
+        return result
+
     async def get_dropbox_rubric_assessment(
         self,
         orgUnitId: int,
