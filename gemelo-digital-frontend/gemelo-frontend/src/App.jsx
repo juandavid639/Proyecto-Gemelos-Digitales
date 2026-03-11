@@ -1407,21 +1407,41 @@ export default function App() {
     setCourseListLoading(true);
 
     const tryEndpoints = async () => {
+      // Rutas en orden de prioridad — las dos primeras existen en el backend actual.
+      // /brightspace/my-course-offerings  → retorna { count, items: [{id,name,code,...}] }
+      // /brightspace/courses/enrolled     → alias del anterior (mismo schema)
+      // /brightspace/my-courses           → raw Brightspace { Items: [{OrgUnit:{...}},...] }
       const endpoints = [
+        "/brightspace/my-course-offerings",
         "/brightspace/courses/enrolled",
-        "/brightspace/courses",
-        "/gemelo/courses",
-        `/brightspace/users/me/enrollments`,
+        "/brightspace/my-courses",
       ];
+
       for (const ep of endpoints) {
         try {
           const d = await apiGet(ep);
-          const raw = Array.isArray(d) ? d
-            : (d?.Items || d?.items || d?.PagingInfo?.Bookmark
-                ? [] : d?.courses || d?.enrollments || []);
-          if (raw.length > 0) return raw;
+
+          // /my-course-offerings y /courses/enrolled → { items: [...] }
+          if (Array.isArray(d?.items) && d.items.length > 0) return d.items;
+
+          // /my-courses → raw Brightspace { Items: [{OrgUnit:{Id,Name,Code,...}},...] }
+          if (Array.isArray(d?.Items) && d.Items.length > 0) {
+            return d.Items
+              .map((it) => {
+                const ou = it?.OrgUnit || {};
+                return {
+                  id:   ou.Id,
+                  name: ou.Name || "",
+                  code: ou.Code || "",
+                };
+              })
+              .filter((c) => c.id);
+          }
+
+          // Array directo (fallback)
+          if (Array.isArray(d) && d.length > 0) return d;
         } catch {
-          // try next
+          // intentar siguiente ruta
         }
       }
       return [];

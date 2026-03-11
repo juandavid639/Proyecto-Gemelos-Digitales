@@ -1,5 +1,15 @@
 # Gemelo Digital
 
+Cuidado con el front , cambios realizados volver a la normalidad : 
+
+ const GEMELO_API = API_BASE_URL;  Eliminar 
+
+# Construir Front
+
+npm run build
+aws s3 sync .\dist\ s3://gemelo-frontend-prod --delete
+aws cloudfront create-invalidation --distribution-id E32WDBCT7SFCRD --paths "/*"
+
 # Construir backend
 
 docker build -t gemelo-api
