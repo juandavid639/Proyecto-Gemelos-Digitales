@@ -12,14 +12,27 @@ function apiUrl(path) {
 
 const AuthContext = createContext(null);
 
-// Map Brightspace roles to app roles
-function mapRole(backendRole) {
-  if (!backendRole) return "instructor"; // default
-  const r = String(backendRole).toLowerCase();
-  if (r.includes("estudiante")) return "student";
-  if (r.includes("student")) return "student";
-  // Everything else: instructor, admin, coordinator
-  return "instructor";
+const ROLES_INSTRUCTOR = new Set(["instructor", "coordinador administrativo", "super administrator"]);
+const ROLES_STUDENT = new Set(["estudiante ef"]);
+
+// Map a single Brightspace role string to app role
+function mapSingleRole(backendRole) {
+  if (!backendRole) return null;
+  const r = String(backendRole).toLowerCase().trim();
+  if (ROLES_STUDENT.has(r) || r.includes("estudiante") || r.includes("student")) return "student";
+  if (ROLES_INSTRUCTOR.has(r) || r.includes("instructor") || r.includes("admin") || r.includes("coordinador")) return "instructor";
+  return "instructor"; // unknown roles default to instructor
+}
+
+// Determine all app-level roles from backend all_roles array
+function mapAllRoles(allRolesArray) {
+  if (!Array.isArray(allRolesArray) || !allRolesArray.length) return ["instructor"];
+  const appRoles = new Set();
+  for (const r of allRolesArray) {
+    const mapped = mapSingleRole(r);
+    if (mapped) appRoles.add(mapped);
+  }
+  return appRoles.size > 0 ? Array.from(appRoles) : ["instructor"];
 }
 
 export function AuthProvider({ children }) {
@@ -32,7 +45,6 @@ export function AuthProvider({ children }) {
     (async () => {
       try {
         // Read hash fragment from OAuth callback
-        // Format: #gemelo:SESSION_ID:orgUnitId:first_login
         let _sid = null;
         let _hashOu = null;
         const _hash = window.location.hash;
@@ -47,13 +59,9 @@ export function AuthProvider({ children }) {
           window.history.replaceState(null, "", window.location.pathname + window.location.search);
         }
 
-        // Fallback: read from localStorage
         if (!_sid) _sid = localStorage.getItem("gemelo_sid");
-
-        // Save session_id
         if (_sid) localStorage.setItem("gemelo_sid", _sid);
 
-        // Apply orgUnitId from hash
         if (_hashOu) {
           setInitialOrgUnitId(_hashOu);
         }
@@ -68,21 +76,27 @@ export function AuthProvider({ children }) {
         });
         const data = await res.json();
         if (data.authenticated) {
-          // Add mapped role to user object
+          // Compute app-level roles
+          const allRolesRaw = data.all_roles || (data.role ? [data.role] : []);
+          const appRoles = mapAllRoles(allRolesRaw);
+          const primaryRole = mapSingleRole(data.role) || appRoles[0];
+
           const user = {
             ...data,
-            appRole: mapRole(data.role),
+            appRole: primaryRole,
+            appRoles, // ["instructor", "student"] for dual-role users
+            isDualRole: appRoles.length > 1,
+            isInstructor: appRoles.includes("instructor"),
+            isStudent: appRoles.includes("student"),
           };
           setAuthUser(user);
 
-          // Check for saved orgUnit from LTI
           const savedOu = sessionStorage.getItem("gemelo_pending_org");
           if (savedOu && Number(savedOu) > 0) {
             sessionStorage.removeItem("gemelo_pending_org");
             setInitialOrgUnitId(Number(savedOu));
           }
 
-          // First-time tutorial detection
           const isFirstLogin = sessionStorage.getItem("gemelo_first_login") === "1";
           const alreadyOnboarded = localStorage.getItem("gemelo_onboarded") === "1";
           if (isFirstLogin || !alreadyOnboarded) {
@@ -124,6 +138,10 @@ export function AuthProvider({ children }) {
       authUser,
       authChecked,
       role,
+      allRoles: authUser?.appRoles || ["instructor"],
+      isDualRole: authUser?.isDualRole || false,
+      isInstructor: authUser?.isInstructor ?? true,
+      isStudent: authUser?.isStudent ?? false,
       logout,
       showTutorial,
       setShowTutorial,

@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 export default function ProtectedRoute({ children, allowedRoles }) {
-  const { authUser, authChecked, role } = useAuth();
+  const { authUser, authChecked, allRoles, isDualRole } = useAuth();
 
   if (!authChecked) {
     return (
@@ -20,8 +20,13 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
-    return <Navigate to={role === "student" ? "/portal" : "/dashboard"} replace />;
+  // For dual-role users: check if ANY of their roles matches the allowed roles
+  if (allowedRoles) {
+    const hasAccess = allRoles.some((r) => allowedRoles.includes(r));
+    if (!hasAccess) {
+      // Redirect to home (role selector) for dual-role, or to their single view
+      return <Navigate to={isDualRole ? "/" : (allRoles.includes("student") ? "/portal" : "/dashboard")} replace />;
+    }
   }
 
   return children;

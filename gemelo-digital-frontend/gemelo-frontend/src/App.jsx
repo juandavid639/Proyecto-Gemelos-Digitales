@@ -1,19 +1,20 @@
 import React, { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { ToastProvider } from "./context/ToastContext";
+import ErrorBoundary from "./components/ui/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import LoginScreen from "./components/auth/LoginScreen";
+import RoleHome from "./pages/RoleHome";
 import TeacherDashboard from "./pages/TeacherDashboard";
 import StudentPortal from "./pages/StudentPortal";
 import { injectStyles } from "./styles/global";
 
 function AppRoutes() {
-  const { authUser, authChecked, role } = useAuth();
+  const { authUser, authChecked, isDualRole, isInstructor, isStudent } = useAuth();
 
-  // Not checked yet — AuthProvider handles the loading state
   if (!authChecked) return null;
-
-  // Not authenticated — show login
   if (!authUser) return <LoginScreen />;
 
   return (
@@ -23,7 +24,9 @@ function AppRoutes() {
         path="/dashboard/*"
         element={
           <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-            <TeacherDashboard />
+            <ErrorBoundary sectionName="Dashboard Docente">
+              <TeacherDashboard />
+            </ErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -33,22 +36,33 @@ function AppRoutes() {
         path="/portal/*"
         element={
           <ProtectedRoute allowedRoles={["student"]}>
-            <StudentPortal />
+            <ErrorBoundary sectionName="Portal Estudiante">
+              <StudentPortal />
+            </ErrorBoundary>
           </ProtectedRoute>
         }
       />
 
-      {/* Login page (accessible to all) */}
+      {/* Login page */}
       <Route path="/login" element={<LoginScreen />} />
 
-      {/* Default redirect based on role */}
+      {/* Home — role selector for dual-role, auto-redirect for single-role */}
+      <Route
+        path="/"
+        element={
+          isDualRole
+            ? <RoleHome />
+            : <Navigate to={isStudent ? "/portal" : "/dashboard"} replace />
+        }
+      />
+
+      {/* Catch-all */}
       <Route
         path="*"
         element={
-          <Navigate
-            to={role === "student" ? "/portal" : "/dashboard"}
-            replace
-          />
+          isDualRole
+            ? <Navigate to="/" replace />
+            : <Navigate to={isStudent ? "/portal" : "/dashboard"} replace />
         }
       />
     </Routes>
@@ -62,9 +76,15 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <ErrorBoundary sectionName="Gemelo Digital">
+              <AppRoutes />
+            </ErrorBoundary>
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

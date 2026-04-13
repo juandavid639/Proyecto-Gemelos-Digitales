@@ -787,7 +787,14 @@ async def brightspace_courses_enrolled(
     if err:
         return err
     items = await _fetch_all_enrollments(headers, user_id, org_unit_type_id=3, limit=limit)
-    offerings = [_normalize_offering(i.get("OrgUnit") or {}) for i in items]
+    offerings = []
+    for i in items:
+        ou = i.get("OrgUnit") or {}
+        offering = _normalize_offering(ou)
+        # Include the role for this specific enrollment
+        access = i.get("Access") or {}
+        offering["roleName"] = access.get("ClasslistRoleName") or ""
+        offerings.append(offering)
     if active_only:
         offerings = [o for o in offerings if o["isActive"]]
     return {"count": len(offerings), "items": offerings}

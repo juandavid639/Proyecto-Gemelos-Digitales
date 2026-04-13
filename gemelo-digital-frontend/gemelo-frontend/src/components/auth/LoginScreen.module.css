@@ -1,0 +1,125 @@
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font, 'Manrope', system-ui, sans-serif);
+  padding: 20px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 40px 48px;
+  text-align: center;
+  max-width: 440px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.logoIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  background: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.logoText {
+  text-align: left;
+}
+
+.logoTitle {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.logoSub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 0 28px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 28px;
+}
+
+.loginBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 20px;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 12px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 4px 16px rgba(11,95,255,0.3);
+  transition: opacity 0.15s;
+}
+
+.loginBtn:hover {
+  opacity: 0.88;
+}
+
+.info {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 18px;
+  line-height: 1.5;
+}
+
+.ltiNote {
+  margin-top: 20px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--brand-light);
+  border: 1px solid var(--brand-light2, #D6E4FF);
+}
+
+.ltiNoteText {
+  font-size: 11px;
+  color: var(--brand);
+  font-weight: 700;
+  margin: 0;
+}
