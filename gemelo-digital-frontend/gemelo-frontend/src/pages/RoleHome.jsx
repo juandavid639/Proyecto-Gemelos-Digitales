@@ -81,13 +81,9 @@ export default function RoleHome() {
 
   const handleSelectCourse = (courseId, asRole) => {
     sessionStorage.setItem("gemelo_pending_org", String(courseId));
-    if (asRole === "student") {
-      navigate("/portal");
-    } else {
-      navigate("/dashboard");
-    }
-    // Force reload to pick up the new orgUnitId
-    window.location.reload();
+    // Navigate with full page load so the target page picks up the new orgUnitId
+    const target = asRole === "student" ? "/portal" : "/dashboard";
+    window.location.href = window.location.origin + target;
   };
 
   const CourseCard = ({ course, role }) => {

@@ -21,17 +21,25 @@ export default function LoginScreen({ orgUnitId }) {
   );
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "var(--bg)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Manrope', system-ui, sans-serif", padding: 20,
-    }}>
-      <div style={{
-        background: "var(--card)", border: "1px solid var(--border)",
-        borderRadius: 24, padding: "40px 48px",
-        textAlign: "center", maxWidth: 440, width: "100%",
-        boxShadow: "0 8px 32px rgba(15,24,39,0.12), 0 16px 48px rgba(15,24,39,0.08)",
-      }}>
+    <main
+      role="main"
+      aria-label="Inicio de sesión - Gemelo Digital CESA"
+      style={{
+        minHeight: "100vh", background: "var(--bg)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Manrope', system-ui, sans-serif", padding: 20,
+      }}
+    >
+      <div
+        role="region"
+        aria-label="Formulario de autenticación"
+        style={{
+          background: "var(--card)", border: "1px solid var(--border)",
+          borderRadius: 24, padding: "40px 48px",
+          textAlign: "center", maxWidth: 440, width: "100%",
+          boxShadow: "0 8px 32px rgba(15,24,39,0.12), 0 16px 48px rgba(15,24,39,0.08)",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 28 }}>
           <div style={{
             width: 48, height: 48, borderRadius: 13,
@@ -97,6 +105,6 @@ export default function LoginScreen({ orgUnitId }) {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

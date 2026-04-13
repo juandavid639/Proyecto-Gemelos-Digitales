@@ -3591,7 +3591,7 @@ function AppTopbar({
               } catch {}
               localStorage.removeItem("gemelo_sid");
               sessionStorage.clear();
-              window.location.reload();
+              window.location.href = window.location.origin + "/";
             }}
             title="Cerrar sesión"
             style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
@@ -4090,31 +4090,54 @@ export default function TeacherDashboard() {
   const [courseListLoaded, setCourseListLoaded] = useState(false);
   const [courseSearch, setCourseSearch] = useState("");
 
-  // Buscar cursos: intenta my-course-offerings (inscripciones propias),
-  // si no encuentra resultados o el usuario es admin, usa all-courses (orgstructure global)
+  // Buscar cursos: usa enrolled (incluye roleName) + my-course-offerings como fallback
   const searchCourses = React.useCallback(async (term) => {
     setLoadingCourses(true);
     try {
       const q = term && term.trim().length > 0 ? term.trim() : "";
       const qs = q ? `?active_only=false&limit=50&search=${encodeURIComponent(q)}` : `?active_only=false&limit=50`;
 
-      // Llamar ambos endpoints en paralelo
-      const [myData, allData] = await Promise.allSettled([
+      // Try enrolled first (includes roleName), fallback to my-course-offerings
+      const [enrolledData, myData, allData] = await Promise.allSettled([
+        apiGet(`/brightspace/courses/enrolled?active_only=false&limit=200`),
         apiGet(`/brightspace/my-course-offerings${qs}`),
         apiGet(`/brightspace/all-courses${qs}`),
       ]);
 
+      const enrolledItems = enrolledData.status === "fulfilled" ? (Array.isArray(enrolledData.value?.items) ? enrolledData.value.items : []) : [];
       const myItems  = myData.status  === "fulfilled" ? (Array.isArray(myData.value?.items)  ? myData.value.items  : []) : [];
       const allItems = allData.status === "fulfilled" ? (Array.isArray(allData.value?.items) ? allData.value.items : []) : [];
 
-      // Merge: usar all-courses como base, marcar los que ya están inscritos
-      const idSet = new Set(myItems.map(c => String(c.id)));
-      const merged = allItems.length > 0 ? allItems : myItems;
+      // Build role map from enrolled endpoint
+      const roleMap = {};
+      for (const c of enrolledItems) {
+        if (c.id) roleMap[String(c.id)] = c.roleName || "";
+      }
 
-      // Si all-courses devolvió algo, fusionar con los de my-courses
-      const final = allItems.length > 0
-        ? allItems.map(c => ({ ...c, enrolled: idSet.has(String(c.id)) }))
-        : myItems;
+      // Merge: use all-courses or my-courses, enrich with roleName
+      const idSet = new Set(myItems.map(c => String(c.id)));
+      let final = allItems.length > 0
+        ? allItems.map(c => ({ ...c, enrolled: idSet.has(String(c.id)), roleName: roleMap[String(c.id)] || c.roleName || "" }))
+        : myItems.map(c => ({ ...c, roleName: roleMap[String(c.id)] || "Instructor" }));
+
+      // If enrolled has items not in final, add them
+      if (enrolledItems.length > 0) {
+        const existingIds = new Set(final.map(c => String(c.id)));
+        for (const c of enrolledItems) {
+          if (!existingIds.has(String(c.id))) {
+            final.push(c);
+          }
+        }
+      }
+
+      // Filter by search term if provided
+      if (q) {
+        final = final.filter(c =>
+          String(c.name || "").toLowerCase().includes(q.toLowerCase()) ||
+          String(c.code || "").toLowerCase().includes(q.toLowerCase()) ||
+          String(c.id || "").includes(q)
+        );
+      }
 
       final.sort((a, b) => {
         if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
@@ -5201,32 +5224,70 @@ const contentKpis = useMemo(() => {
                 </button>
               )}
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
-              {courseList.map(c => (
-                <button key={c.id}
-                  onClick={() => { setOrgUnitId(Number(c.id)); setOrgUnitInput(String(c.id)); }}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "12px 14px", borderRadius: 10, border: "1.5px solid var(--border)",
-                    background: "var(--bg)", cursor: "pointer", textAlign: "left",
-                    transition: "all 0.15s", fontFamily: "var(--font)",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.background = "var(--brand-light)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
-                >
+          ) : (() => {
+            const STUDENT_ROLES = ["estudiante ef", "student", "estudiante"];
+            const isStudentRole = (rn) => STUDENT_ROLES.some(sr => String(rn || "").toLowerCase().includes(sr));
+            const instructorCourses = courseList.filter(c => !isStudentRole(c.roleName));
+            const studentCourses = courseList.filter(c => isStudentRole(c.roleName));
+
+            const CourseBtn = ({ c, color, hoverBg }) => (
+              <button key={c.id}
+                onClick={() => {
+                  if (isStudentRole(c.roleName)) {
+                    sessionStorage.setItem("gemelo_pending_org", String(c.id));
+                    window.location.href = window.location.origin + "/portal";
+                  } else {
+                    setOrgUnitId(Number(c.id)); setOrgUnitInput(String(c.id));
+                  }
+                }}
+                aria-label={`Abrir curso ${c.name}`}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 14px", borderRadius: 10, border: `1.5px solid var(--border)`,
+                  background: "var(--bg)", cursor: "pointer", textAlign: "left",
+                  transition: "all 0.15s", fontFamily: "var(--font)", width: "100%",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = hoverBg; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg)"; }}
+              >
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{c.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>ID {c.id}{c.code ? ` · ${c.code}` : ""}</span>
+                    {!c.isActive && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase" }}>Inactivo</span>}
+                  </div>
+                </div>
+                <span style={{ color, fontSize: 16, flexShrink: 0 }}>→</span>
+              </button>
+            );
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: 420, overflowY: "auto" }}>
+                {instructorCourses.length > 0 && (
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{c.name}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>ID {c.id}{c.code ? ` · ${c.code}` : ""}</span>
-                      {!c.isActive && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase" }}>Inactivo</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 14 }}>📊</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--brand)" }}>Como Profesor ({instructorCourses.length})</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {instructorCourses.map(c => <CourseBtn key={`i-${c.id}`} c={c} color="var(--brand)" hoverBg="var(--brand-light)" />)}
                     </div>
                   </div>
-                  <span style={{ color: "var(--brand)", fontSize: 16, flexShrink: 0 }}>→</span>
-                </button>
-              ))}
-            </div>
-          )}
+                )}
+                {studentCourses.length > 0 && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 14 }}>🎓</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--ok)" }}>Como Estudiante ({studentCourses.length})</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {studentCourses.map(c => <CourseBtn key={`s-${c.id}`} c={c} color="var(--ok)" hoverBg="var(--ok-bg)" />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
             <button
               onClick={async () => {
@@ -5237,7 +5298,7 @@ const contentKpis = useMemo(() => {
                 } catch {}
                 localStorage.removeItem("gemelo_sid");
                 sessionStorage.clear();
-                window.location.reload();
+                window.location.href = window.location.origin + "/";
               }}
               style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
             >

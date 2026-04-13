@@ -128,7 +128,8 @@ export function AuthProvider({ children }) {
     } catch {}
     localStorage.removeItem("gemelo_sid");
     sessionStorage.clear();
-    window.location.reload();
+    // Redirect to root (login) instead of reload to avoid 403 on SPA routes
+    window.location.href = window.location.origin + "/";
   };
 
   const role = authUser?.appRole || "instructor";
