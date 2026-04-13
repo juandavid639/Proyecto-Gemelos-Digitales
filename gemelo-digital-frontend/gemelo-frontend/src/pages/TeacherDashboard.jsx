@@ -83,26 +83,30 @@ const GLOBAL_STYLES = `
   }
 
   .dark {
-    --bg: #080E1A;
-    --bg2: #0D1422;
-    --card: #111827;
-    --border: #1E2A3D;
-    --border2: #2A3A52;
-    --text: #EEF2FA;
-    --muted: #7A8EAD;
-    --brand-light: #0F2044;
-    --brand-light2: #0A1830;
-    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.4);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
-    --ok-bg: #0A2018;
-    --ok-border: #1A4030;
-    --watch-bg: #1E1400;
-    --watch-border: #3D2800;
-    --critical-bg: #200A08;
-    --critical-border: #3D1010;
-    --pending-bg: #121A28;
-    --pending-border: #1E2A3D;
+    --bg: #0B1120;
+    --bg2: #101828;
+    --card: #1A2332;
+    --border: #2D3B4F;
+    --border2: #3D4F66;
+    --text: #F1F5FB;
+    --muted: #94A3BB;
+    --brand: #3B82F6;
+    --brand-light: #172554;
+    --brand-light2: #1E3A5F;
+    --shadow: 0 1px 4px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.35);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.65);
+    --ok: #34D399;
+    --ok-bg: #0D2818;
+    --ok-border: #166534;
+    --watch: #FBBF24;
+    --watch-bg: #27200A;
+    --watch-border: #854D0E;
+    --critical: #F87171;
+    --critical-bg: #2A0F0F;
+    --critical-border: #991B1B;
+    --pending-bg: #1A2332;
+    --pending-border: #2D3B4F;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -4090,47 +4094,36 @@ export default function TeacherDashboard() {
   const [courseListLoaded, setCourseListLoaded] = useState(false);
   const [courseSearch, setCourseSearch] = useState("");
 
-  // Buscar cursos: usa enrolled (incluye roleName) + my-course-offerings como fallback
+  // Buscar cursos: usa /courses/enrolled (incluye roleName) como fuente principal
   const searchCourses = React.useCallback(async (term) => {
     setLoadingCourses(true);
     try {
       const q = term && term.trim().length > 0 ? term.trim() : "";
-      const qs = q ? `?active_only=false&limit=50&search=${encodeURIComponent(q)}` : `?active_only=false&limit=50`;
 
-      // Try enrolled first (includes roleName), fallback to my-course-offerings
-      const [enrolledData, myData, allData] = await Promise.allSettled([
+      // enrolled es la fuente principal: incluye TODOS los cursos con roleName
+      // my-course-offerings como fallback (solo cursos como instructor)
+      const [enrolledData, myData] = await Promise.allSettled([
         apiGet(`/brightspace/courses/enrolled?active_only=false&limit=200`),
-        apiGet(`/brightspace/my-course-offerings${qs}`),
-        apiGet(`/brightspace/all-courses${qs}`),
+        apiGet(`/brightspace/my-course-offerings?active_only=false&limit=50`),
       ]);
 
-      const enrolledItems = enrolledData.status === "fulfilled" ? (Array.isArray(enrolledData.value?.items) ? enrolledData.value.items : []) : [];
-      const myItems  = myData.status  === "fulfilled" ? (Array.isArray(myData.value?.items)  ? myData.value.items  : []) : [];
-      const allItems = allData.status === "fulfilled" ? (Array.isArray(allData.value?.items) ? allData.value.items : []) : [];
+      const enrolledItems = enrolledData.status === "fulfilled"
+        ? (Array.isArray(enrolledData.value?.items) ? enrolledData.value.items : [])
+        : [];
+      const myItems = myData.status === "fulfilled"
+        ? (Array.isArray(myData.value?.items) ? myData.value.items : [])
+        : [];
 
-      // Build role map from enrolled endpoint
-      const roleMap = {};
-      for (const c of enrolledItems) {
-        if (c.id) roleMap[String(c.id)] = c.roleName || "";
-      }
-
-      // Merge: use all-courses or my-courses, enrich with roleName
-      const idSet = new Set(myItems.map(c => String(c.id)));
-      let final = allItems.length > 0
-        ? allItems.map(c => ({ ...c, enrolled: idSet.has(String(c.id)), roleName: roleMap[String(c.id)] || c.roleName || "" }))
-        : myItems.map(c => ({ ...c, roleName: roleMap[String(c.id)] || "Instructor" }));
-
-      // If enrolled has items not in final, add them
+      // Usar enrolled como base (tiene roleName). Fallback a myItems si enrolled falla.
+      let final;
       if (enrolledItems.length > 0) {
-        const existingIds = new Set(final.map(c => String(c.id)));
-        for (const c of enrolledItems) {
-          if (!existingIds.has(String(c.id))) {
-            final.push(c);
-          }
-        }
+        final = enrolledItems;
+      } else {
+        // Fallback: my-course-offerings (solo instructor, sin roleName)
+        final = myItems.map(c => ({ ...c, roleName: "Instructor" }));
       }
 
-      // Filter by search term if provided
+      // Filtrar por búsqueda
       if (q) {
         final = final.filter(c =>
           String(c.name || "").toLowerCase().includes(q.toLowerCase()) ||
@@ -4144,7 +4137,7 @@ export default function TeacherDashboard() {
         return String(a.name || "").localeCompare(String(b.name || ""), "es", { sensitivity: "base" });
       });
 
-      setCourseList(final.length > 0 ? final : myItems);
+      setCourseList(final);
       setCourseListLoaded(true);
     } catch {
       // no bloquear si falla

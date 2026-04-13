@@ -54,26 +54,30 @@ const GLOBAL_STYLES = `
   }
 
   .dark {
-    --bg: #080E1A;
-    --bg2: #0D1422;
-    --card: #111827;
-    --border: #1E2A3D;
-    --border2: #2A3A52;
-    --text: #EEF2FA;
-    --muted: #7A8EAD;
-    --brand-light: #0F2044;
-    --brand-light2: #0A1830;
-    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.4);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
-    --ok-bg: #0A2018;
-    --ok-border: #1A4030;
-    --watch-bg: #1E1400;
-    --watch-border: #3D2800;
-    --critical-bg: #200A08;
-    --critical-border: #3D1010;
-    --pending-bg: #121A28;
-    --pending-border: #1E2A3D;
+    --bg: #0B1120;
+    --bg2: #101828;
+    --card: #1A2332;
+    --border: #2D3B4F;
+    --border2: #3D4F66;
+    --text: #F1F5FB;
+    --muted: #94A3BB;
+    --brand: #3B82F6;
+    --brand-light: #172554;
+    --brand-light2: #1E3A5F;
+    --shadow: 0 1px 4px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.35);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.65);
+    --ok: #34D399;
+    --ok-bg: #0D2818;
+    --ok-border: #166534;
+    --watch: #FBBF24;
+    --watch-bg: #27200A;
+    --watch-border: #854D0E;
+    --critical: #F87171;
+    --critical-bg: #2A0F0F;
+    --critical-border: #991B1B;
+    --pending-bg: #1A2332;
+    --pending-border: #2D3B4F;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -116,7 +120,28 @@ const GLOBAL_STYLES = `
   .sidebar-course-name { font-size: 11px; font-weight: 700; color: var(--text); margin-top: 2px; line-height: 1.3; }
 
   .app-topbar { position: fixed; left: var(--sidebar-w); right: 0; top: 0; height: 56px; background: rgba(255,255,255,0.9); backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 20px; z-index: 50; transition: left 0.28s cubic-bezier(.4,0,.2,1); }
-  .dark .app-topbar { background: rgba(17,24,39,0.9); }
+  .dark .app-topbar { background: rgba(26,35,50,0.92); }
+  .dark .app-sidebar { background: var(--card); border-color: var(--border); }
+  .dark .kpi-card { border-color: var(--border); }
+  .dark .tr-hover:hover { background: var(--brand-light) !important; }
+  .dark input[type="text"], .dark input[type="number"] { background: var(--bg); color: var(--text); border-color: var(--border); }
+  .dark .btn { background: var(--card); color: var(--text); border-color: var(--border); }
+  .dark .btn:hover { background: var(--brand-light); }
+  .dark .chip { background: var(--card); border-color: var(--border); color: var(--muted); }
+  .dark .tag { background: var(--brand-light); color: var(--brand); }
+  .dark .badge { border-color: rgba(255,255,255,0.1); }
+  .dark .topbar-search { background: var(--bg); border-color: var(--border); }
+  .dark .topbar-search input { color: var(--text); }
+  .dark .topbar-icon-btn { border-color: var(--border); color: var(--muted); }
+  .dark .topbar-icon-btn:hover { background: var(--bg); color: var(--text); }
+  .dark .sidebar-nav-item:hover { background: var(--bg); }
+  .dark .sidebar-nav-item.active { background: var(--brand-light); }
+  .dark .course-item:hover { background: var(--brand-light); }
+  .dark .scenario-card { background: var(--card); border-color: var(--border); }
+  .dark .scenario-card.scenario-risk { background: var(--critical-bg); border-color: var(--critical-border); }
+  .dark .scenario-card.scenario-improve { background: var(--ok-bg); border-color: var(--ok-border); }
+  .dark .empty-state { background: var(--card); border-color: var(--border); }
+  .dark .qc-flag { background: var(--bg); border-color: var(--border); }
   .app-topbar.sidebar-collapsed { left: 0; }
   .topbar-search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 12px; width: 240px; transition: all 0.15s; }
   .topbar-search:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(11,95,255,0.1); width: 280px; }

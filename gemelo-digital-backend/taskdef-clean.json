@@ -22,7 +22,7 @@
       "command": [],
       "environment": [
         { "name": "ELEVENLABS_API_KEY", "value": "sk_7844a11273a93403a35da574e314338d66e51417d79ed494" },
-        { "name": "ELEVENLABS_VOICE_ID", "value": "CFNUvNr80GexCH1pyfTY" },
+        { "name": "ELEVENLABS_VOICE_ID", "value": "pFZP5JQG7iQjIQuC4Bku" },
         {
           "name": "BRIGHTSPACE_SCOPE",
           "value": "core:*:* Application:*:* Data:*:* grades:gradeobjects:read grades:grades:read outcomes:sets:read content:modules:read"
