@@ -14,6 +14,9 @@ export default defineConfig({
       "/health": "http://localhost:8000",
       "/debug": "http://localhost:8000",
       "/.well-known": "http://localhost:8000",
-    }
-  }
+      "/speech": "http://localhost:8000",
+    },
+    // SPA fallback: redirect all non-API routes to index.html for BrowserRouter
+    historyApiFallback: true,
+  },
 })
