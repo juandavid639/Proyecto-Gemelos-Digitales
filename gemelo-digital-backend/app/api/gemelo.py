@@ -410,6 +410,49 @@ async def gemelo_learning_outcomes(
         _http500(e, "gemelo_learning_outcomes", orgUnitId=orgUnitId)
 
 
+@router.get("/course/{orgUnitId}/grade-items")
+async def gemelo_grade_items(
+    orgUnitId: int,
+    svc: GemeloService = Depends(get_service),
+):
+    """Return all grade items in the course with their metadata (Name, Weight,
+    DueDate, EndDate, MaxPoints, etc.). Used by the frontend to build the
+    course-wide due date calendar without needing to fetch per-student gemelos.
+
+    Returns:
+        {orgUnitId, count, items: [{id, name, weight, maxPoints, dueDate, endDate, gradeType}]}
+    """
+    try:
+        raw = await svc.bs.list_grade_items(orgUnitId)
+        if isinstance(raw, dict):
+            data_list = raw.get("Items") or raw.get("items") or []
+        else:
+            data_list = raw if isinstance(raw, list) else []
+
+        items = []
+        for it in data_list:
+            if not isinstance(it, dict):
+                continue
+            items.append({
+                "id": it.get("Id") or it.get("Identifier"),
+                "name": it.get("Name"),
+                "weightPct": it.get("Weight"),
+                "maxPoints": it.get("MaxPoints"),
+                "dueDate": it.get("DueDate"),
+                "endDate": it.get("EndDate"),
+                "gradeType": it.get("GradeType"),
+                "categoryId": it.get("CategoryId"),
+            })
+
+        return {"orgUnitId": orgUnitId, "count": len(items), "items": items}
+    except Exception as e:
+        # Graceful: return empty list instead of 500 if the user lacks scope
+        msg = str(e)
+        if "403" in msg or "401" in msg or "404" in msg:
+            return {"orgUnitId": orgUnitId, "count": 0, "items": [], "error": msg[:200]}
+        _http500(e, "gemelo_grade_items", orgUnitId=orgUnitId)
+
+
 @router.get(
     "/debug/{orgUnitId}/folder/{folderId}/student/{userId}/rubric/{rubricId}/assessment"
 )

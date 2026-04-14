@@ -1,17 +1,26 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { predictClassFailures, predictFinalGrade } from "../../utils/prediction";
-import { COLORS } from "../../utils/colors";
+import { COLORS, colorForPct } from "../../utils/colors";
 
 /**
  * Class-level grade prediction summary.
- * Uses trajectory projection (not ML) to estimate how many students
- * will pass/fail if current performance holds.
+ *
+ * Uses a deterministic projection (NOT machine learning):
+ *   expected_final = (current_pct × coverage%) + (current_pct × (100 - coverage%))
+ *   ≡ current_pct  (assumes student maintains current performance)
+ *
+ * Categories:
+ *   - Reprobará:  expected < 50% (4.9 / 10)
+ *   - En el límite (borderline): 50-60% (5.0 - 5.9 / 10)
+ *   - Aprobará: ≥ 60% (≥ 6.0 / 10)
+ *
+ * Confidence grows with coverage (more graded items = more reliable projection).
  *
  * Props:
- *   studentRows: array
+ *   studentRows
  *   onStudentClick: (userId) => void
- *   courseInfo: { Name, StartDate, EndDate } — optional
- *   variant: "compact" | "full" — compact = small summary, full = large view
+ *   courseInfo: { Name, StartDate, EndDate }
+ *   variant: "compact" | "full"
  */
 export default function GradePredictions({
   studentRows = [],
@@ -19,6 +28,8 @@ export default function GradePredictions({
   courseInfo = null,
   variant = "compact",
 }) {
+  const [showHelp, setShowHelp] = useState(false);
+
   const { willFail, borderline, willPass, total } = useMemo(
     () => predictClassFailures(studentRows),
     [studentRows]
@@ -36,7 +47,6 @@ export default function GradePredictions({
   const startDateStr = fmtDate(courseInfo?.StartDate);
   const endDateStr = fmtDate(courseInfo?.EndDate);
 
-  // Compute days elapsed and remaining
   const { daysElapsed, daysRemaining, progressPct } = useMemo(() => {
     if (!courseInfo?.StartDate || !courseInfo?.EndDate) {
       return { daysElapsed: null, daysRemaining: null, progressPct: null };
@@ -61,11 +71,23 @@ export default function GradePredictions({
     }
   }, [courseInfo]);
 
+  // Average confidence across students
+  const avgConfidence = useMemo(() => {
+    const preds = studentRows
+      .map(s => predictFinalGrade(s))
+      .filter(p => p != null);
+    if (preds.length === 0) return null;
+    return Math.round(preds.reduce((a, p) => a + p.confidence, 0) / preds.length);
+  }, [studentRows]);
+
   if (total === 0) {
     return (
       <div style={{ padding: "20px", textAlign: "center", color: "var(--muted)" }}>
-        <div style={{ fontSize: 24, opacity: 0.4, marginBottom: 6 }}>🔮</div>
+        <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 6 }}>🔮</div>
         <div style={{ fontSize: 12 }}>Sin datos suficientes para predecir notas finales.</div>
+        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
+          Se necesitan estudiantes con al menos algo de cobertura calificada.
+        </div>
       </div>
     );
   }
@@ -74,9 +96,64 @@ export default function GradePredictions({
   const borderPct = Math.round((borderline.length / total) * 100);
   const passPct = Math.round((willPass.length / total) * 100);
 
+  const StudentList = ({ list, color, bgColor, borderColor, label, icon }) => (
+    <div style={{
+      padding: 14, background: bgColor, border: `1px solid ${borderColor}`,
+      borderRadius: 12, marginBottom: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            {label} ({list.length})
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: variant === "full" ? 360 : 200, overflowY: "auto" }}>
+        {list.map(({ student, pred }) => {
+          const grade10 = pred.expectedGrade10.toFixed(1);
+          return (
+            <button
+              key={student.userId}
+              onClick={() => onStudentClick(student.userId)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(255,255,255,0.6)",
+                border: "1px solid rgba(255,255,255,0.4)",
+                cursor: "pointer",
+                fontSize: 12, fontFamily: "var(--font)", textAlign: "left",
+                transition: "background 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.95)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.6)"; }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {student.displayName}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+                  Nota actual: {student.currentPerformancePct != null ? (student.currentPerformancePct / 10).toFixed(1) : "—"}/10
+                  {" · "}Cobertura: {student.coveragePct != null ? `${student.coveragePct.toFixed(0)}%` : "—"}
+                  {" · "}Confianza: {pred.confidence}%
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>Proyección</div>
+                <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "var(--font-mono)", color: color, lineHeight: 1 }}>
+                  {grade10}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      {/* Course timeline header (visible in full variant) */}
+      {/* Course timeline header (full variant only) */}
       {variant === "full" && (startDateStr || endDateStr) && (
         <div style={{
           marginBottom: 16, padding: "14px 16px",
@@ -102,7 +179,7 @@ export default function GradePredictions({
           </div>
           {progressPct != null && (
             <div>
-              <div style={{ height: 6, borderRadius: 99, background: "rgba(255,255,255,0.6)", overflow: "hidden", marginBottom: 6 }}>
+              <div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,0.6)", overflow: "hidden", marginBottom: 6 }}>
                 <div style={{ width: `${progressPct}%`, height: "100%", background: "var(--brand)", borderRadius: 99 }} />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
@@ -115,142 +192,140 @@ export default function GradePredictions({
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>
-        Proyección basada en la trayectoria actual (sin considerar mejora/empeoramiento futuro).
-        Confianza crece con la cobertura calificada.
+      {/* How it works — collapsible */}
+      <div style={{
+        marginBottom: 12,
+        padding: "10px 14px",
+        background: "var(--bg)",
+        borderRadius: 10,
+        border: "1px solid var(--border)",
+      }}>
+        <button
+          onClick={() => setShowHelp(v => !v)}
+          aria-expanded={showHelp}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6,
+            fontSize: 12, fontWeight: 700, color: "var(--brand)",
+            padding: 0,
+          }}
+        >
+          <span>{showHelp ? "▾" : "▸"}</span>
+          <span>¿Cómo funciona la predicción?</span>
+        </button>
+        {showHelp && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>
+            <p style={{ margin: "0 0 8px" }}>
+              La predicción <strong>NO usa machine learning</strong>. Es una proyección determinística simple:
+            </p>
+            <div style={{ background: "var(--card)", padding: 10, borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 11, marginBottom: 8 }}>
+              <div>• Tomamos la nota actual del estudiante (sobre el % calificado del curso).</div>
+              <div>• Asumimos que mantendrá ese mismo desempeño en el % restante.</div>
+              <div>• La nota proyectada = nota actual.</div>
+            </div>
+            <p style={{ margin: "0 0 8px" }}>
+              La <strong>confianza</strong> crece con la cobertura calificada: si solo se ha
+              calificado el 20% del curso, la proyección es muy especulativa (confianza 20%).
+              Si está en 80%, la proyección es muy fiable.
+            </p>
+            <p style={{ margin: 0, fontStyle: "italic", color: "var(--muted)" }}>
+              Categorías:&nbsp;
+              <span style={{ color: COLORS.critical, fontWeight: 700 }}>Reprobará (&lt;5.0)</span> ·{" "}
+              <span style={{ color: COLORS.watch, fontWeight: 700 }}>En el límite (5.0–5.9)</span> ·{" "}
+              <span style={{ color: COLORS.ok, fontWeight: 700 }}>Aprobará (≥6.0)</span>
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Summary bar */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", border: "1px solid var(--border)" }}>
-          {willPass.length > 0 && (
-            <div style={{ flex: willPass.length, background: COLORS.ok }} title={`Pasarán: ${willPass.length}`} />
-          )}
-          {borderline.length > 0 && (
-            <div style={{ flex: borderline.length, background: COLORS.watch }} title={`Borderline: ${borderline.length}`} />
-          )}
-          {willFail.length > 0 && (
-            <div style={{ flex: willFail.length, background: COLORS.critical }} title={`Reprobarán: ${willFail.length}`} />
-          )}
+      {/* Headline summary */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+        <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--critical-border)", background: "var(--critical-bg)", textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "var(--critical)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>Reprobarán</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: COLORS.critical, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+            {willFail.length}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>{failPct}% del curso</div>
         </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 10, flexWrap: "wrap" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 99, background: COLORS.ok }} />
-            Pasarán: <strong style={{ color: COLORS.ok }}>{willPass.length}</strong> ({passPct}%)
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 99, background: COLORS.watch }} />
-            Borderline: <strong style={{ color: COLORS.watch }}>{borderline.length}</strong> ({borderPct}%)
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 99, background: COLORS.critical }} />
-            Reprobarán: <strong style={{ color: COLORS.critical }}>{willFail.length}</strong> ({failPct}%)
-          </span>
+        <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--watch-border)", background: "var(--watch-bg)", textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "var(--watch)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>En el límite</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: COLORS.watch, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+            {borderline.length}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>{borderPct}% del curso</div>
+        </div>
+        <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--ok-border)", background: "var(--ok-bg)", textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "var(--ok)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>Aprobarán</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: COLORS.ok, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+            {willPass.length}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>{passPct}% del curso</div>
         </div>
       </div>
 
-      {/* At-risk students detail */}
+      {/* Confidence indicator */}
+      {avgConfidence != null && (
+        <div style={{
+          marginBottom: 14, padding: "8px 12px",
+          background: "var(--bg)", borderRadius: 8,
+          border: "1px solid var(--border)",
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <span style={{ fontSize: 14 }}>📊</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
+              Confianza promedio: {avgConfidence}%
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted)" }}>
+              {avgConfidence < 30
+                ? "Muy especulativa — el curso está empezando."
+                : avgConfidence < 60
+                ? "Moderada — todavía puede cambiar significativamente."
+                : "Alta — proyecciones fiables."}
+            </div>
+          </div>
+          <div style={{ width: 80, height: 6, borderRadius: 99, background: "var(--border)", overflow: "hidden" }}>
+            <div style={{
+              width: `${avgConfidence}%`, height: "100%",
+              background: avgConfidence > 60 ? "var(--ok)" : avgConfidence > 30 ? "var(--watch)" : "var(--critical)",
+              borderRadius: 99,
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Detailed lists */}
       {willFail.length > 0 && (
-        <div style={{ padding: 12, background: "var(--critical-bg)", border: "1px solid var(--critical-border)", borderRadius: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--critical)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-            ⚠️ Alto riesgo de reprobación ({willFail.length})
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {willFail.slice(0, 5).map(({ student, pred }) => (
-              <button
-                key={student.userId}
-                onClick={() => onStudentClick(student.userId)}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "6px 10px", borderRadius: 8,
-                  background: "rgba(255,255,255,0.5)",
-                  border: "none", cursor: "pointer",
-                  fontSize: 12, fontFamily: "var(--font)", textAlign: "left",
-                }}
-              >
-                <span style={{ fontWeight: 700, color: "var(--text)" }}>
-                  {student.displayName}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--critical)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
-                  Proyección: {pred.expectedGrade10.toFixed(1)}/10
-                </span>
-              </button>
-            ))}
-            {willFail.length > 5 && (
-              <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", padding: "4px 0" }}>
-                + {willFail.length - 5} más
-              </div>
-            )}
-          </div>
-        </div>
+        <StudentList
+          list={variant === "full" ? willFail : willFail.slice(0, 5)}
+          color={COLORS.critical}
+          bgColor="var(--critical-bg)"
+          borderColor="var(--critical-border)"
+          label="⚠️ Alto riesgo de reprobación"
+          icon="🔴"
+        />
       )}
 
       {borderline.length > 0 && (
-        <div style={{ padding: 12, background: "var(--watch-bg)", border: "1px solid var(--watch-border)", borderRadius: 10, marginBottom: variant === "full" ? 10 : 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--watch)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-            🟡 En el límite ({borderline.length})
-          </div>
-          {variant === "full" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {borderline.map(({ student, pred }) => (
-                <button
-                  key={student.userId}
-                  onClick={() => onStudentClick(student.userId)}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "6px 10px", borderRadius: 8,
-                    background: "rgba(255,255,255,0.5)",
-                    border: "none", cursor: "pointer",
-                    fontSize: 12, fontFamily: "var(--font)", textAlign: "left",
-                  }}
-                >
-                  <span style={{ fontWeight: 700, color: "var(--text)" }}>
-                    {student.displayName}
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--watch)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
-                    Proyección: {pred.expectedGrade10.toFixed(1)}/10
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-              {borderline.map(x => x.student.displayName.split(" ")[0]).slice(0, 5).join(", ")}
-              {borderline.length > 5 ? `, y ${borderline.length - 5} más` : ""}
-            </div>
-          )}
-        </div>
+        <StudentList
+          list={variant === "full" ? borderline : borderline.slice(0, 5)}
+          color={COLORS.watch}
+          bgColor="var(--watch-bg)"
+          borderColor="var(--watch-border)"
+          label="🟡 En el límite"
+          icon="⚖️"
+        />
       )}
 
-      {/* Full list of all students with their predictions (full variant only) */}
       {variant === "full" && willPass.length > 0 && (
-        <div style={{ padding: 12, background: "var(--ok-bg)", border: "1px solid var(--ok-border)", borderRadius: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--ok)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-            ✅ En camino a aprobar ({willPass.length})
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 320, overflowY: "auto" }}>
-            {willPass.map(({ student, pred }) => (
-              <button
-                key={student.userId}
-                onClick={() => onStudentClick(student.userId)}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "6px 10px", borderRadius: 8,
-                  background: "rgba(255,255,255,0.5)",
-                  border: "none", cursor: "pointer",
-                  fontSize: 12, fontFamily: "var(--font)", textAlign: "left",
-                }}
-              >
-                <span style={{ fontWeight: 700, color: "var(--text)" }}>
-                  {student.displayName}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--ok)", fontWeight: 800, fontFamily: "var(--font-mono)" }}>
-                  Proyección: {pred.expectedGrade10.toFixed(1)}/10
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <StudentList
+          list={willPass}
+          color={COLORS.ok}
+          bgColor="var(--ok-bg)"
+          borderColor="var(--ok-border)"
+          label="✅ En camino a aprobar"
+          icon="✅"
+        />
       )}
     </div>
   );

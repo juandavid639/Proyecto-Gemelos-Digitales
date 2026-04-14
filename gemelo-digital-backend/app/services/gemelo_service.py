@@ -640,15 +640,20 @@ class GemeloService:
             if uid is None:
                 continue
 
-            # Extract email from classlist entry (EmailAddress/UserName fields)
-            user_obj = it.get("User") or it
-            email = (
-                user_obj.get("EmailAddress")
-                or user_obj.get("emailAddress")
-                or it.get("EmailAddress")
-                or it.get("emailAddress")
-                or None
-            )
+            # Extract email from classlist entry — try every common field name
+            # CESA frequently puts the email in OrgDefinedId or UserName too.
+            user_obj = it.get("User") if isinstance(it.get("User"), dict) else {}
+            def _pick_email(*objs):
+                for o in objs:
+                    if not isinstance(o, dict):
+                        continue
+                    for k in ("EmailAddress", "emailAddress", "Email", "email",
+                              "UserName", "userName", "OrgDefinedId", "orgDefinedId"):
+                        v = o.get(k)
+                        if v and isinstance(v, str) and "@" in v:
+                            return v.strip()
+                return None
+            email = _pick_email(user_obj, it)
 
             students.append(
                 {

@@ -28,6 +28,7 @@ import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
 import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
 import GradePredictions from "../components/dashboard/GradePredictions";
+import EvidenceReports from "../components/dashboard/EvidenceReports";
 import useStudentNotes from "../hooks/useStudentNotes";
 import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
@@ -3005,6 +3006,9 @@ function findStudentByName(rows, name) {
 function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) {
   const [search, setSearch] = React.useState("");
 
+  const STUDENT_ROLES = ["estudiante ef", "student", "estudiante"];
+  const isStudentRole = (rn) => STUDENT_ROLES.some(sr => String(rn || "").toLowerCase().includes(sr));
+
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return courses;
@@ -3015,8 +3019,47 @@ function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) 
     );
   }, [courses, search]);
 
-  const active = filtered.filter((c) => c.isActive !== false);
-  const inactive = filtered.filter((c) => c.isActive === false);
+  // Separate by role first, then by active state
+  const instructorCourses = filtered.filter(c => !isStudentRole(c.roleName));
+  const studentCourses = filtered.filter(c => isStudentRole(c.roleName));
+
+  const renderSection = (title, list, color, icon) => {
+    if (list.length === 0) return null;
+    const active = list.filter(c => c.isActive !== false);
+    const inactive = list.filter(c => c.isActive === false);
+    return (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{
+          padding: "10px 16px 6px",
+          display: "flex", alignItems: "center", gap: 8,
+          borderTop: "1px solid var(--border)",
+        }}>
+          <span style={{ fontSize: 13 }}>{icon}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            {title}
+          </span>
+          <span className="tag" style={{ background: color + "1A", color: color, marginLeft: "auto" }}>{list.length}</span>
+        </div>
+        {active.length > 0 && (
+          <>
+            {active.map((c) => (
+              <CourseItem key={c.id} course={c} isActive={true} isCurrent={c.id === currentId} onSelect={onSelect} accent={color} />
+            ))}
+          </>
+        )}
+        {inactive.length > 0 && (
+          <>
+            <div style={{ padding: "8px 16px 4px", fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Históricos
+            </div>
+            {inactive.map((c) => (
+              <CourseItem key={c.id} course={c} isActive={false} isCurrent={c.id === currentId} onSelect={onSelect} accent={color} />
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="course-panel-overlay" onClick={onClose}>
@@ -3030,7 +3073,9 @@ function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) 
           <div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>Mis cursos</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-              {loadingCourses ? "Cargando…" : `${courses.length} curso${courses.length !== 1 ? "s" : ""} encontrado${courses.length !== 1 ? "s" : ""}`}
+              {loadingCourses
+                ? "Cargando…"
+                : `${instructorCourses.length} como profesor · ${studentCourses.length} como estudiante`}
             </div>
           </div>
           <button className="btn" onClick={onClose} style={{ padding: "6px 12px", fontSize: 12 }}>
@@ -3070,26 +3115,8 @@ function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) 
             </div>
           ) : (
             <>
-              {active.length > 0 && (
-                <>
-                  <div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Activos · {active.length}
-                  </div>
-                  {active.map((c) => (
-                    <CourseItem key={c.id} course={c} isActive={true} isCurrent={c.id === currentId} onSelect={onSelect} />
-                  ))}
-                </>
-              )}
-              {inactive.length > 0 && (
-                <>
-                  <div style={{ padding: "12px 16px 4px", fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Históricos · {inactive.length}
-                  </div>
-                  {inactive.map((c) => (
-                    <CourseItem key={c.id} course={c} isActive={false} isCurrent={c.id === currentId} onSelect={onSelect} />
-                  ))}
-                </>
-              )}
+              {renderSection("Como Profesor", instructorCourses, "var(--brand)", "📊")}
+              {renderSection("Como Estudiante", studentCourses, "var(--ok)", "🎓")}
             </>
           )}
         </div>
@@ -3098,23 +3125,38 @@ function CoursePanel({ courses, loadingCourses, currentId, onSelect, onClose }) 
   );
 }
 
-function CourseItem({ course, isActive, isCurrent, onSelect }) {
+function CourseItem({ course, isActive, isCurrent, onSelect, accent }) {
   const startYear = course.startDate ? new Date(course.startDate).getFullYear() : null;
   const endYear   = course.endDate   ? new Date(course.endDate).getFullYear()   : null;
   const period = startYear && endYear && startYear !== endYear
     ? `${startYear}–${endYear}` : startYear ? String(startYear) : null;
+
+  const STUDENT_ROLES = ["estudiante ef", "student", "estudiante"];
+  const isStudent = STUDENT_ROLES.some(sr => String(course.roleName || "").toLowerCase().includes(sr));
+  const accentColor = accent || (isStudent ? "var(--ok)" : "var(--brand)");
+
+  const handleClick = () => {
+    if (isStudent) {
+      // Student courses redirect to the student portal
+      sessionStorage.setItem("gemelo_pending_org", String(course.id));
+      window.location.href = window.location.origin + "/portal";
+    } else {
+      onSelect(course.id);
+    }
+  };
 
   return (
     <div
       role="button"
       tabIndex={0}
       className={`course-item${isCurrent ? " active" : ""}`}
-      onClick={() => onSelect(course.id)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(course.id); }}
+      onClick={handleClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleClick(); }}
+      style={isCurrent ? { borderLeft: `3px solid ${accentColor}` } : undefined}
     >
       <div
         className="course-item-dot"
-        style={{ background: isActive ? "var(--ok)" : "var(--muted)" }}
+        style={{ background: isActive ? accentColor : "var(--muted)" }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -3136,7 +3178,7 @@ function CourseItem({ course, isActive, isCurrent, onSelect }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
         {isCurrent && (
-          <span className="tag" style={{ fontSize: 10, padding: "2px 6px" }}>Activo</span>
+          <span className="tag" style={{ fontSize: 10, padding: "2px 6px", background: accentColor + "1A", color: accentColor }}>Activo</span>
         )}
         <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)" }}>
           {course.id}
@@ -3471,6 +3513,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
     { id: "dashboard",  icon: "📊", label: "Dashboard" },
     { id: "routes",     icon: "🛤️", label: "Rutas de atención" },
     { id: "predictions", icon: "🔮", label: "Predicción de notas" },
+    { id: "evidences",  icon: "📑", label: "Evidencias" },
     { id: "assistant",  icon: "🤖", label: "Asistente IA" },
   ];
   const NAV_BOTTOM = [
@@ -5733,6 +5776,31 @@ const contentKpis = useMemo(() => {
           </div>
         )}
 
+        {/* ── Evidences tab ── */}
+        {activeTab === "evidences" && (
+          <div className="fade-up tab-enter">
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+                Gemelo Digital · Informes de evidencias
+              </div>
+              <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+                Evidencias por banda de desempeño
+              </h1>
+              <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+                {courseInfo?.Name || `Curso ${orgUnitId}`}
+              </div>
+            </div>
+            <Card>
+              <EvidenceReports
+                orgUnitId={orgUnitId}
+                studentRows={studentRows}
+                courseInfo={courseInfo}
+                onStudentClick={selectStudentById}
+              />
+            </Card>
+          </div>
+        )}
+
         {/* ── Assistant tab ── */}
         {activeTab === "assistant" && (
           <div className="fade-up tab-enter">
@@ -6311,8 +6379,8 @@ const contentKpis = useMemo(() => {
 
         {/* ── Calendario de entregas ── */}
         <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
-          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final." /></span>}>
-            <DueDateCalendar studentRows={studentRows} drawerEvidences={drawerEvidences} />
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
+            <DueDateCalendar orgUnitId={orgUnitId} />
           </Card>
         </div>
 
@@ -6470,15 +6538,34 @@ const contentKpis = useMemo(() => {
                     className="btn"
                     onClick={() => {
                       // Compose mailto with all selected student emails
-                      const emails = studentRows
-                        .filter(s => selectedStudentIds.has(s.userId) && s.email)
-                        .map(s => s.email)
-                        .join(",");
-                      if (emails) {
-                        window.open(`mailto:?bcc=${encodeURIComponent(emails)}&subject=${encodeURIComponent("Sobre el curso: " + (courseInfo?.Name || ""))}`);
-                      } else {
-                        alert("Los estudiantes seleccionados no tienen email disponible.");
+                      const selected = studentRows.filter(s => selectedStudentIds.has(s.userId));
+                      const withEmail = selected.filter(s => s.email);
+                      const skipped = selected.length - withEmail.length;
+
+                      if (withEmail.length === 0) {
+                        alert(
+                          `Ninguno de los ${selected.length} estudiantes seleccionados tiene email disponible.\n\n` +
+                          `El email se obtiene del classlist de Brightspace. Si el campo no aparece, ` +
+                          `puede deberse a permisos de privacidad del curso o a que los estudiantes no tienen email registrado.`
+                        );
+                        return;
                       }
+
+                      if (skipped > 0) {
+                        const proceed = window.confirm(
+                          `${withEmail.length} de ${selected.length} estudiantes tienen email.\n` +
+                          `${skipped} serán omitidos.\n\n¿Continuar con los disponibles?`
+                        );
+                        if (!proceed) return;
+                      }
+
+                      const emails = withEmail.map(s => s.email).join(",");
+                      const subject = encodeURIComponent("Sobre el curso: " + (courseInfo?.Name || ""));
+                      const body = encodeURIComponent(
+                        `Hola,\n\n[escribe tu mensaje aquí]\n\nSaludos,\n${authUser?.user_name || "Docente"}`
+                      );
+                      // Use BCC to protect privacy; mailto: limit varies by client (~2000 chars usually)
+                      window.location.href = `mailto:?bcc=${encodeURIComponent(emails)}&subject=${subject}&body=${body}`;
                     }}
                     style={{ fontSize: 11, padding: "5px 10px" }}
                   >
