@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { computeRiskFromPct } from "../../utils/helpers";
 
 /**
@@ -136,6 +136,8 @@ export default function SmartAlerts({
     return out;
   }, [studentRows, overview, contentKpis]);
 
+  const [open, setOpen] = useState(false);
+
   if (alerts.length === 0) return null;
 
   const severityStyles = {
@@ -144,69 +146,125 @@ export default function SmartAlerts({
     info: { border: "var(--ok)", bg: "var(--ok-bg)", color: "var(--ok)" },
   };
 
+  // Count by severity for the collapsed summary
+  const counts = { critical: 0, warning: 0, info: 0 };
+  for (const a of alerts) counts[a.severity] = (counts[a.severity] || 0) + 1;
+
   return (
     <div className="kpi-card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "14px 18px", borderBottom: "1px solid var(--border)",
-        background: "var(--bg)",
-      }}>
+      {/* Collapsed header — clickable to toggle */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        aria-expanded={open}
+        aria-label={`Alertas inteligentes, ${alerts.length} detectadas. Click para ${open ? "ocultar" : "ver detalle"}.`}
+        style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "14px 18px",
+          borderBottom: open ? "1px solid var(--border)" : "none",
+          background: "var(--bg)",
+          cursor: "pointer",
+          userSelect: "none",
+          transition: "background 0.15s",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--brand-light)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg)"; }}
+      >
         <span style={{ fontSize: 18 }}>💡</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>
-            Alertas inteligentes
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>
+              Alertas inteligentes
+            </span>
+            <span className="tag">{alerts.length}</span>
           </div>
-          <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>
-            {alerts.length} detectada{alerts.length !== 1 ? "s" : ""} · Análisis automático
+          {/* Severity breakdown badges */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+            {counts.critical > 0 && (
+              <span className="badge" style={{ background: "var(--critical-bg)", color: "#B42318" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--critical)", display: "inline-block" }} />
+                Críticas: {counts.critical}
+              </span>
+            )}
+            {counts.warning > 0 && (
+              <span className="badge" style={{ background: "var(--watch-bg)", color: "#9A3412" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--watch)", display: "inline-block" }} />
+                Observación: {counts.warning}
+              </span>
+            )}
+            {counts.info > 0 && (
+              <span className="badge" style={{ background: "var(--ok-bg)", color: "#1B5E20" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)", display: "inline-block" }} />
+                Positivas: {counts.info}
+              </span>
+            )}
           </div>
         </div>
+        <button
+          className="btn"
+          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+          style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }}
+        >
+          {open ? "Ocultar ▴" : "Ver detalle ▾"}
+        </button>
       </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {alerts.map((alert) => {
-          const s = severityStyles[alert.severity] || severityStyles.info;
-          return (
-            <div
-              key={alert.id}
-              style={{
-                padding: "12px 18px",
-                borderBottom: "1px solid var(--border)",
-                display: "flex", gap: 12, alignItems: "flex-start",
-                borderLeft: `3px solid ${s.border}`,
-                background: s.bg,
-              }}
-            >
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{alert.icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: s.color, marginBottom: 2 }}>
-                  {alert.title}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
-                  {alert.message}
-                </div>
-                {alert.students && alert.students.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                    {alert.students.map((st) => (
-                      <button
-                        key={st.id}
-                        onClick={() => onStudentClick(st.id)}
-                        className="chip"
-                        style={{ fontSize: 10, padding: "3px 8px" }}
-                      >
-                        {(st.name || "").split(" ").slice(0, 2).join(" ")}
-                      </button>
-                    ))}
-                    {alert.totalCount > alert.students.length && (
-                      <span style={{ fontSize: 10, color: "var(--muted)", alignSelf: "center" }}>
-                        +{alert.totalCount - alert.students.length} más
-                      </span>
-                    )}
+
+      {/* Expanded details */}
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {alerts.map((alert) => {
+            const s = severityStyles[alert.severity] || severityStyles.info;
+            return (
+              <div
+                key={alert.id}
+                style={{
+                  padding: "12px 18px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex", gap: 12, alignItems: "flex-start",
+                  borderLeft: `3px solid ${s.border}`,
+                  background: s.bg,
+                }}
+              >
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{alert.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: s.color, marginBottom: 2 }}>
+                    {alert.title}
                   </div>
-                )}
+                  <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
+                    {alert.message}
+                  </div>
+                  {alert.students && alert.students.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      {alert.students.map((st) => (
+                        <button
+                          key={st.id}
+                          onClick={() => onStudentClick(st.id)}
+                          className="chip"
+                          style={{ fontSize: 10, padding: "3px 8px" }}
+                        >
+                          {(st.name || "").split(" ").slice(0, 2).join(" ")}
+                        </button>
+                      ))}
+                      {alert.totalCount > alert.students.length && (
+                        <span style={{ fontSize: 10, color: "var(--muted)", alignSelf: "center" }}>
+                          +{alert.totalCount - alert.students.length} más
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

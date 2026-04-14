@@ -26,7 +26,6 @@ import ContextualTip from "../components/ui/ContextualTip";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
-import CoursesComparison from "../components/dashboard/CoursesComparison";
 import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
 import GradePredictions from "../components/dashboard/GradePredictions";
 import useStudentNotes from "../hooks/useStudentNotes";
@@ -6310,25 +6309,11 @@ const contentKpis = useMemo(() => {
           </Card>
         </div>
 
+        {/* ── Calendario de entregas ── */}
         <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1fr) minmax(280px, 1fr)",
-            gap: 16,
-          }}>
-            {/* Calendario de entregas */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final." /></span>}>
-              <DueDateCalendar studentRows={studentRows} drawerEvidences={drawerEvidences} />
-            </Card>
-
-            {/* Comparativa con otros cursos */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Mis cursos (comparativa) <InfoTooltip text="Compara el curso actual con tus otros cursos activos. Haz clic en otro curso para cambiarte." /></span>}>
-              <CoursesComparison
-                currentOrgUnitId={orgUnitId}
-                onSelectCourse={(id) => switchCourse(id)}
-              />
-            </Card>
-          </div>
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final." /></span>}>
+            <DueDateCalendar studentRows={studentRows} drawerEvidences={drawerEvidences} />
+          </Card>
         </div>
 
         <div ref={studentsRef} className="fade-up fade-up-3" style={{ marginTop: 4 }}>
