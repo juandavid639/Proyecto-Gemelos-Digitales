@@ -831,30 +831,58 @@ async def brightspace_courses_enrolled(
     active_only: bool = Query(default=True),
     limit:       int  = Query(default=200),
 ):
-    """Returns the authenticated user's own enrollments (including courses where
-    they are a student). Uses /enrollments/myenrollments/ as the primary source
-    because it includes ALL enrollments for the current user (instructor + student).
-    Falls back to admin-level /enrollments/users/{uid}/orgUnits/ if myenrollments
-    fails (e.g., token missing enrollment:own_enrollment:read scope)."""
+    """Returns the authenticated user's enrollments merged from TWO endpoints:
+    1. /enrollments/myenrollments/ (requires enrollment:own_enrollment:read)
+       — returns courses where user is directly enrolled (student, instructor).
+    2. /enrollments/users/{user_id}/orgUnits/ (requires enrollment:orgunit:read)
+       — admin-level lookup that may return additional courses for Super Admins
+       who have global access without explicit per-course enrollment.
+
+    The two results are merged by OrgUnit ID. For overlapping courses,
+    myenrollments data wins (it has the canonical user-specific Access.roleName).
+    This ensures:
+    - Students see their student courses (via myenrollments)
+    - Instructors see their courses (via either)
+    - Super Admins see ALL accessible courses (via admin endpoint fallback)"""
     token, err = _require_token_from_request(request)
     if err:
         return err
     headers = _auth_headers(token)
 
-    # Primary: myenrollments (requires enrollment:own_enrollment:read)
-    items = await _fetch_my_enrollments(headers, limit=limit)
+    # 1. myenrollments — user's own explicit enrollments
+    items_my = await _fetch_my_enrollments(headers, limit=limit)
 
-    # Fallback: admin-level endpoint
-    if not items:
+    # 2. admin-level endpoint — same data but via different scope; may return
+    #    additional courses for global admins
+    items_admin = []
+    try:
         user_id, err_uid = await _get_whoami_id(headers)
         if not err_uid and user_id:
-            items = await _fetch_all_enrollments(headers, user_id, org_unit_type_id=3, limit=limit)
+            items_admin = await _fetch_all_enrollments(headers, user_id, org_unit_type_id=3, limit=limit)
+    except Exception as _e:
+        logger.warning("_fetch_all_enrollments failed: %s", str(_e)[:200])
+        items_admin = []
+
+    # Merge by OrgUnit.Id — prefer myenrollments data when same course
+    by_ou = {}
+    for i in items_my:
+        ou = i.get("OrgUnit") or {}
+        ou_id = ou.get("Id") or ou.get("id")
+        if ou_id is not None:
+            by_ou[str(ou_id)] = i
+    for i in items_admin:
+        ou = i.get("OrgUnit") or {}
+        ou_id = ou.get("Id") or ou.get("id")
+        if ou_id is not None and str(ou_id) not in by_ou:
+            by_ou[str(ou_id)] = i
+
+    merged_items = list(by_ou.values())
 
     offerings = []
-    for i in items:
+    for i in merged_items:
         ou = i.get("OrgUnit") or {}
         offering = _normalize_offering(ou)
-        # Include roleName from Access (present in both myenrollments and users/{id}/orgUnits/)
+        # Include roleName from Access (present in both endpoints)
         access = i.get("Access") or {}
         offering["roleName"] = access.get("ClasslistRoleName") or ""
         offerings.append(offering)
@@ -879,6 +907,11 @@ async def brightspace_courses_enrolled(
                             if pr in detected_roles:
                                 SESSION_STORE[sid]["role"] = pr
                                 break
+
+    logger.info(
+        "courses/enrolled: myenrollments=%d admin=%d merged=%d final=%d",
+        len(items_my), len(items_admin), len(merged_items), len(offerings),
+    )
 
     return {"count": len(offerings), "items": offerings}
 

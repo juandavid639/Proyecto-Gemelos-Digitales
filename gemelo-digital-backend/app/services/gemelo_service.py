@@ -770,7 +770,45 @@ class GemeloService:
         if not callable(fn):
             raise RuntimeError("brightspace_client no expone list_classlist")
 
-        data = await fn(orgUnitId)
+        # Attempt classlist fetch. If it fails (403/404), return a graceful
+        # empty-state response instead of blocking the whole course view.
+        # This lets Super Administrators see the course shell even when
+        # their token doesn't grant classlist access for that specific course.
+        try:
+            data = await fn(orgUnitId)
+        except Exception as e:
+            msg = str(e)
+            if "403" in msg or "401" in msg or "404" in msg:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "classlist unavailable for course %s (%s) — returning empty overview",
+                    orgUnitId, msg[:120],
+                )
+                return {
+                    "orgUnitId": orgUnitId,
+                    "studentsCount": 0,
+                    "macroCompetencies": [],
+                    "courseGradebook": {
+                        "avgCurrentPerformancePct": 0.0,
+                        "avgCoveragePct": 0.0,
+                        "avgNotSubmittedPct": 0.0,
+                        "avgPendingUngradedPct": 0.0,
+                        "avgOverdueUnscoredPct": 0.0,
+                        "avgGradedItemsCount": 0,
+                        "avgTotalItemsCount": 0,
+                        "coverageCountText": "0/0",
+                        "status": "pending",
+                    },
+                    "globalRiskDistribution": {"alto": 0, "medio": 0, "bajo": 0, "pending": 0},
+                    "thresholds": {"critical": 50.0, "watch": 70.0},
+                    "alerts": [],
+                    "studentsAtRisk": [],
+                    "qualityFlags": [{
+                        "type": "classlist_unavailable",
+                        "message": "No se pudo obtener el classlist de este curso (403/404). El usuario no tiene permisos específicos en este curso.",
+                    }],
+                }
+            raise
         items = _as_items_list(data)
 
         student_ids: List[int] = []
