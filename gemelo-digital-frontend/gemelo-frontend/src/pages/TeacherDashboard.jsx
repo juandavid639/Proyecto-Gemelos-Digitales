@@ -20,8 +20,10 @@ import { useAuth } from "../context/AuthContext";
 import StudentAvatar from "../components/ui/StudentAvatar";
 import Breadcrumb from "../components/ui/Breadcrumb";
 import LastUpdated from "../components/ui/LastUpdated";
+import CommandPalette from "../components/ui/CommandPalette";
 import useStudentNotes from "../hooks/useStudentNotes";
 import useCompactMode from "../hooks/useCompactMode";
+import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 /**
  * =========================
  * Config
@@ -3524,6 +3526,7 @@ function AppTopbar({
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
   authUser, isDualRole, onGoHome,
+  onOpenPalette,
 }) {
   return (
     <header className="app-topbar">
@@ -3560,6 +3563,24 @@ function AppTopbar({
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {onOpenPalette && (
+          <button
+            className="btn"
+            onClick={onOpenPalette}
+            title="Paleta de comandos (Ctrl+K)"
+            aria-label="Abrir paleta de comandos"
+            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10, gap: 8 }}
+          >
+            <span>🔎</span>
+            {!isMobile && <>
+              <span>Comandos</span>
+              <span style={{
+                fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
+                background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)",
+              }}>⌘K</span>
+            </>}
+          </button>
+        )}
         {isDualRole && (
           <button
             className="btn"
@@ -4127,6 +4148,47 @@ export default function TeacherDashboard() {
 
   // Compact mode
   const { compact, toggleCompact } = useCompactMode();
+
+  // Command palette (Ctrl+K)
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Quick filter (active filter chip applied to the students table)
+  // Values: null, "risk_high", "risk_medium", "no_coverage", "overdue", "pending_grade", "approved"
+  const [quickFilter, setQuickFilter] = useState(null);
+
+  // Bulk selection (student userIds selected via checkboxes)
+  const [selectedStudentIds, setSelectedStudentIds] = useState(() => new Set());
+  const toggleStudentSelection = React.useCallback((userId) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
+  const clearSelection = React.useCallback(() => setSelectedStudentIds(new Set()), []);
+
+  // Collapsible risk groups in students table
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
+  const toggleGroupCollapsed = React.useCallback((groupKey) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }, []);
+
+  // Group students table by risk?
+  const [groupByRisk, setGroupByRisk] = useState(() => {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem("gemelo_group_by_risk") === "1";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("gemelo_group_by_risk", groupByRisk ? "1" : "0");
+    } catch {}
+  }, [groupByRisk]);
 
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
@@ -5050,6 +5112,24 @@ const weakestAssignment = useMemo(() => {
 
     // Normal filter path
     if (onlyRisk) list = list.filter((s) => ["alto", "medio"].includes(computeRiskFromPct(s.currentPerformancePct)));
+
+    // Quick filter chips
+    if (quickFilter === "risk_high") {
+      list = list.filter((s) => computeRiskFromPct(s.currentPerformancePct) === "alto");
+    } else if (quickFilter === "risk_medium") {
+      list = list.filter((s) => computeRiskFromPct(s.currentPerformancePct) === "medio");
+    } else if (quickFilter === "no_coverage") {
+      list = list.filter((s) => (s.coveragePct ?? 0) < 40);
+    } else if (quickFilter === "overdue") {
+      list = list.filter((s) => (s.notSubmittedWeightPct ?? s.overdueWeightPct ?? 0) > 0);
+    } else if (quickFilter === "pending_grade") {
+      list = list.filter((s) => (s.pendingSubmittedWeightPct ?? 0) > 0);
+    } else if (quickFilter === "approved") {
+      list = list.filter((s) => s.currentPerformancePct != null && s.currentPerformancePct >= 70);
+    } else if (quickFilter === "no_grade") {
+      list = list.filter((s) => s.currentPerformancePct == null);
+    }
+
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -5059,7 +5139,7 @@ const weakestAssignment = useMemo(() => {
       );
     }
     return list;
-  }, [studentRows, query, onlyRisk, advancedQuery]);
+  }, [studentRows, query, onlyRisk, advancedQuery, quickFilter]);
 
 const contentKpis = useMemo(() => {
     const root = Array.isArray(contentRoot) ? contentRoot : [];
@@ -5201,6 +5281,56 @@ const contentKpis = useMemo(() => {
 
   // Private teacher notes per student (localStorage)
   const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
+
+  // Palette commands
+  const paletteCommands = useMemo(() => {
+    const cmds = [];
+    // Navigation
+    cmds.push({ id: "nav_dashboard", group: "Navegar", icon: "📊", label: "Ir al Dashboard", hint: "1", action: () => setActiveTab("dashboard") });
+    cmds.push({ id: "nav_routes", group: "Navegar", icon: "🛤️", label: "Rutas de atención", hint: "2", action: () => setActiveTab("routes") });
+    cmds.push({ id: "nav_assistant", group: "Navegar", icon: "🤖", label: "Asistente IA", hint: "3", action: () => setActiveTab("assistant") });
+    // Actions
+    cmds.push({ id: "act_courses", group: "Acciones", icon: "📚", label: "Cambiar de curso", action: () => handleOpenCoursePanel() });
+    cmds.push({ id: "act_refresh", group: "Acciones", icon: "⟳", label: "Refrescar datos", hint: "R", action: handleRefresh });
+    cmds.push({ id: "act_print", group: "Acciones", icon: "🖨", label: "Imprimir vista actual", action: () => window.print() });
+    cmds.push({ id: "act_compact", group: "Acciones", icon: compact ? "◱" : "◰", label: compact ? "Desactivar modo compacto" : "Activar modo compacto", action: toggleCompact });
+    cmds.push({ id: "act_dark", group: "Acciones", icon: darkMode ? "☀️" : "🌙", label: darkMode ? "Modo claro" : "Modo oscuro", action: () => setDarkMode(v => !v) });
+    cmds.push({ id: "act_group", group: "Acciones", icon: "📑", label: groupByRisk ? "Desagrupar tabla" : "Agrupar tabla por riesgo", action: () => setGroupByRisk(v => !v) });
+    // Filters
+    cmds.push({ id: "fil_high", group: "Filtros", icon: "🔴", label: "Solo riesgo alto", action: () => { setQuickFilter("risk_high"); setActiveSection("students"); } });
+    cmds.push({ id: "fil_med", group: "Filtros", icon: "🟡", label: "Solo riesgo medio", action: () => { setQuickFilter("risk_medium"); setActiveSection("students"); } });
+    cmds.push({ id: "fil_overdue", group: "Filtros", icon: "⚠️", label: "Con entregas vencidas", action: () => { setQuickFilter("overdue"); setActiveSection("students"); } });
+    cmds.push({ id: "fil_pending", group: "Filtros", icon: "⏳", label: "Con entregas pendientes por calificar", action: () => { setQuickFilter("pending_grade"); setActiveSection("students"); } });
+    cmds.push({ id: "fil_approved", group: "Filtros", icon: "✅", label: "Aprobados (≥7.0)", action: () => { setQuickFilter("approved"); setActiveSection("students"); } });
+    cmds.push({ id: "fil_clear", group: "Filtros", icon: "✖", label: "Limpiar filtros", action: () => { setQuickFilter(null); setQuery(""); setOnlyRisk(false); } });
+    // Students — first 20 quick access
+    (studentRows || []).slice(0, 50).forEach((s) => {
+      cmds.push({
+        id: `student_${s.userId}`,
+        group: "Estudiantes",
+        icon: "👤",
+        label: s.displayName,
+        hint: `#${s.userId}`,
+        action: () => setSelectedStudent(s),
+      });
+    });
+    return cmds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentRows, compact, darkMode, groupByRisk]);
+
+  // Global keyboard shortcuts
+  useKeyboardShortcuts([
+    { keys: "ctrl+k", handler: () => setPaletteOpen(true), description: "Abrir paleta" },
+    { keys: "/", handler: () => setPaletteOpen(true), description: "Abrir paleta" },
+    { keys: "escape", handler: () => { setSelectedStudent(null); setPaletteOpen(false); }, description: "Cerrar" },
+    { keys: "1", handler: () => setActiveTab("dashboard"), description: "Dashboard" },
+    { keys: "2", handler: () => setActiveTab("routes"), description: "Rutas" },
+    { keys: "3", handler: () => setActiveTab("assistant"), description: "Asistente" },
+    { keys: "r", handler: handleRefresh, description: "Refrescar" },
+    { keys: "c", handler: handleOpenCoursePanel, description: "Cambiar curso" },
+    { keys: "?", handler: () => setPaletteOpen(true), description: "Ayuda" },
+    { keys: "shift+/", handler: () => setPaletteOpen(true), description: "Ayuda" },
+  ], [compact, darkMode, groupByRisk]);
 
   const makeSort = (key) => ({
     active: sortKey === key,
@@ -5471,6 +5601,7 @@ const contentKpis = useMemo(() => {
         authUser={authUser}
         isDualRole={isDualRole}
         onGoHome={() => navigate("/")}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       {/* ── Main content ── */}
@@ -6115,6 +6246,111 @@ const contentKpis = useMemo(() => {
               </div>
             )}
 
+            {/* Quick filter chips */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+              {[
+                { id: null, label: "Todos", icon: "📋" },
+                { id: "risk_high", label: "Riesgo alto", icon: "🔴" },
+                { id: "risk_medium", label: "Riesgo medio", icon: "🟡" },
+                { id: "overdue", label: "Vencidos", icon: "⚠️" },
+                { id: "pending_grade", label: "Pendientes calificación", icon: "⏳" },
+                { id: "no_coverage", label: "Cobertura < 40%", icon: "📉" },
+                { id: "approved", label: "Aprobados", icon: "✅" },
+                { id: "no_grade", label: "Sin nota", icon: "❓" },
+              ].map(f => {
+                const active = quickFilter === f.id;
+                return (
+                  <button
+                    key={f.id || "all"}
+                    className={`chip ${active ? "active" : ""}`}
+                    onClick={() => setQuickFilter(f.id)}
+                    aria-pressed={active}
+                    style={{ fontSize: 11 }}
+                  >
+                    {f.icon} {f.label}
+                  </button>
+                );
+              })}
+              <button
+                className="chip"
+                onClick={() => setGroupByRisk(v => !v)}
+                aria-pressed={groupByRisk}
+                title="Agrupar la tabla por nivel de riesgo"
+                style={{ fontSize: 11, marginLeft: "auto", borderColor: groupByRisk ? "var(--brand)" : undefined, color: groupByRisk ? "var(--brand)" : undefined }}
+              >
+                📑 {groupByRisk ? "Agrupado" : "Agrupar por riesgo"}
+              </button>
+            </div>
+
+            {/* Bulk action bar */}
+            {selectedStudentIds.size > 0 && (
+              <div style={{
+                marginBottom: 10, padding: "10px 14px",
+                borderRadius: 10, border: "1px solid var(--brand)",
+                background: "var(--brand-light)",
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "var(--brand)" }}>
+                  {selectedStudentIds.size} estudiante{selectedStudentIds.size !== 1 ? "s" : ""} seleccionado{selectedStudentIds.size !== 1 ? "s" : ""}
+                </span>
+                <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      // Compose mailto with all selected student emails
+                      const emails = studentRows
+                        .filter(s => selectedStudentIds.has(s.userId) && s.email)
+                        .map(s => s.email)
+                        .join(",");
+                      if (emails) {
+                        window.open(`mailto:?bcc=${encodeURIComponent(emails)}&subject=${encodeURIComponent("Sobre el curso: " + (courseInfo?.Name || ""))}`);
+                      } else {
+                        alert("Los estudiantes seleccionados no tienen email disponible.");
+                      }
+                    }}
+                    style={{ fontSize: 11, padding: "5px 10px" }}
+                  >
+                    ✉ Email a todos
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      // Export selected students to CSV
+                      const selected = studentRows.filter(s => selectedStudentIds.has(s.userId));
+                      const rows = [
+                        ["ID", "Nombre", "Email", "Nota", "Cobertura", "Riesgo"].join(","),
+                        ...selected.map(s => [
+                          s.userId,
+                          `"${(s.displayName || "").replace(/"/g, '""')}"`,
+                          s.email || "",
+                          s.currentPerformancePct != null ? (s.currentPerformancePct / 10).toFixed(1) : "",
+                          s.coveragePct != null ? s.coveragePct.toFixed(1) + "%" : "",
+                          s.risk || "",
+                        ].join(","))
+                      ].join("\n");
+                      const blob = new Blob([rows], { type: "text/csv;charset=utf-8" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `estudiantes_${orgUnitId}_${Date.now()}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    style={{ fontSize: 11, padding: "5px 10px" }}
+                  >
+                    📥 Exportar CSV
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={clearSelection}
+                    style={{ fontSize: 11, padding: "5px 10px" }}
+                  >
+                    ✕ Limpiar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Voice hint */}
             {voiceSupported && !voiceFeedback && (
               <div className="voice-hint" style={{ marginBottom: 10 }}>
@@ -6140,6 +6376,21 @@ const contentKpis = useMemo(() => {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ padding: "10px 10px", width: 28 }}>
+                        <input
+                          type="checkbox"
+                          aria-label="Seleccionar todos los estudiantes visibles"
+                          checked={sortedStudents.length > 0 && sortedStudents.every(s => selectedStudentIds.has(s.userId))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds(new Set(sortedStudents.map(s => s.userId)));
+                            } else {
+                              clearSelection();
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </th>
                       <SortTh label="ID" {...makeSort("userId")} />
                       <SortTh label="Nombre" {...makeSort("name")} />
                       <SortTh label="Riesgo" {...makeSort("risk")} />
@@ -6189,148 +6440,168 @@ const contentKpis = useMemo(() => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedStudents.map((s) => (
-                      <tr
-                        key={s.userId}
-                        onClick={() => setSelectedStudent(s)}
-                        className="tr-hover"
-                        style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
-                      >
-                        <td
+                    {(() => {
+                      const renderStudentRow = (s) => (
+                        <tr
+                          key={s.userId}
+                          onClick={() => setSelectedStudent(s)}
+                          className="tr-hover"
                           style={{
-                            padding: "10px 10px",
-                            fontWeight: 700,
-                            color: "var(--muted)",
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 12,
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            background: selectedStudentIds.has(s.userId) ? "var(--brand-light)" : undefined,
                           }}
                         >
-                          {s.userId}
-                        </td>
-                        <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--text)", minWidth: 180 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            {s.displayName}
-                            {s.hasPrescription && (
-                              <span title="Tiene prescripción activa" style={{ fontSize: 14 }}>
-                                📋
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: "10px 10px" }}>
-                          <StatusBadge status={s.isLoading ? "cargando" : s.risk} />
-                        </td>
-                        <td style={{ padding: "10px 10px", maxWidth: compactRouteCol ? 200 : 320, minWidth: 160 }}>
-                          {s.route ? (
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>
-                                {s.route.title}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--muted)",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  maxWidth: compactRouteCol ? 180 : 300,
-                                }}
-                                title={s.route.summary}
-                              >
-                                {s.route.summary}
+                          <td style={{ padding: "10px 10px", width: 28 }} onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Seleccionar ${s.displayName}`}
+                              checked={selectedStudentIds.has(s.userId)}
+                              onChange={() => toggleStudentSelection(s.userId)}
+                            />
+                          </td>
+                          <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                            {s.userId}
+                          </td>
+                          <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--text)", minWidth: 180 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <StudentAvatar userId={s.userId} name={s.displayName} size={28} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                                  {s.displayName}
+                                  {s.hasPrescription && (
+                                    <span title="Tiene prescripción activa" style={{ fontSize: 14 }}>📋</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        {!hideCriticalMacroCol && (
-                          <td style={{ padding: "10px 10px", minWidth: 90 }}>
-                            {(() => {
-                              // Student-level RA (from drawer/gemelo) takes priority.
-                              // Fallback: worst course-level RA as proxy.
-                              const ra = s.mostCriticalMacro || weakestMacro;
-                              if (!ra) return <span style={{ color: "var(--muted)" }}>—</span>;
-                              const isFallback = !s.mostCriticalMacro;
-                              return (
-                                <div title={isFallback ? "RA del curso (sin datos individuales)" : undefined}>
-                                  <div style={{
-                                    fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 800,
-                                    color: isFallback ? "var(--muted)" : colorForPct(ra.pct, thresholds),
-                                  }}>
-                                    {ra.code}
-                                    {isFallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.6 }}>~</span>}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                    {fmtPct(ra.pct ?? ra.avgPct)}
-                                  </div>
+                          </td>
+                          <td style={{ padding: "10px 10px" }}>
+                            <StatusBadge status={s.isLoading ? "cargando" : s.risk} />
+                          </td>
+                          <td style={{ padding: "10px 10px", maxWidth: compactRouteCol ? 200 : 320, minWidth: 160 }}>
+                            {s.route ? (
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>
+                                  {s.route.title}
                                 </div>
-                              );
-                            })()}
+                                <div
+                                  style={{
+                                    fontSize: 11, color: "var(--muted)",
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    maxWidth: compactRouteCol ? 180 : 300,
+                                  }}
+                                  title={s.route.summary}
+                                >
+                                  {s.route.summary}
+                                </div>
+                              </div>
+                            ) : ("—")}
                           </td>
-                        )}
-                        {!hideGlobalProgressCol && (
-                          <td
-                            style={{
-                              padding: "10px 10px",
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 12,
-                              fontWeight: 700,
-                              color: "var(--text)",
-                            }}
-                          >
-                            {fmtPct(s.globalPct)}
-                          </td>
-                        )}
-                        <td style={{ padding: "10px 10px" }}>
-                          <div
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 16,
-                              fontWeight: 900,
-                              color: colorForPct(s.currentPerformancePct, thresholds),
-                            }}
-                          >
-                            {fmtGrade10FromPct(s.currentPerformancePct)}
-                          </div>
-                        </td>
-                        <td style={{ padding: "10px 10px", minWidth: 110 }}>
-                          <div style={{ fontWeight: 800, fontSize: 13, fontFamily: "var(--font-mono)" }}>
-                            {fmtPct(s.coveragePct)}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
-                            {s.coverageCountText || "—"}
-                          </div>
-                          {s.coveragePct != null && (
-                            <ProgressBar
-                              value={s.coveragePct}
-                              color={colorForPct(s.coveragePct, thresholds)}
-                              animate={false}
-                            />
+                          {!hideCriticalMacroCol && (
+                            <td style={{ padding: "10px 10px", minWidth: 90 }}>
+                              {(() => {
+                                const ra = s.mostCriticalMacro || weakestMacro;
+                                if (!ra) return <span style={{ color: "var(--muted)" }}>—</span>;
+                                const isFallback = !s.mostCriticalMacro;
+                                return (
+                                  <div title={isFallback ? "RA del curso (sin datos individuales)" : undefined}>
+                                    <div style={{
+                                      fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 800,
+                                      color: isFallback ? "var(--muted)" : colorForPct(ra.pct, thresholds),
+                                    }}>
+                                      {ra.code}
+                                      {isFallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.6 }}>~</span>}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                      {fmtPct(ra.pct ?? ra.avgPct)}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </td>
                           )}
-                        </td>
-                        <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                          <button
-                            className="btn"
-                            style={{ fontSize: 12, padding: "5px 10px" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedStudent(s);
-                            }}
-                          >
-                            Ver →
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          {!hideGlobalProgressCol && (
+                            <td style={{ padding: "10px 10px", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
+                              {fmtPct(s.globalPct)}
+                            </td>
+                          )}
+                          <td style={{ padding: "10px 10px" }}>
+                            <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 900, color: colorForPct(s.currentPerformancePct, thresholds) }}>
+                              {fmtGrade10FromPct(s.currentPerformancePct)}
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 10px", minWidth: 110 }}>
+                            <div style={{ fontWeight: 800, fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                              {fmtPct(s.coveragePct)}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
+                              {s.coverageCountText || "—"}
+                            </div>
+                            {s.coveragePct != null && (
+                              <ProgressBar value={s.coveragePct} color={colorForPct(s.coveragePct, thresholds)} animate={false} />
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                            <button
+                              className="btn"
+                              style={{ fontSize: 12, padding: "5px 10px" }}
+                              onClick={(e) => { e.stopPropagation(); setSelectedStudent(s); }}
+                            >
+                              Ver →
+                            </button>
+                          </td>
+                        </tr>
+                      );
 
-                    {!sortedStudents.length && (
-                      <tr>
-                        <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                          Sin resultados para el filtro.
-                        </td>
-                      </tr>
-                    )}
+                      if (!sortedStudents.length) {
+                        return (
+                          <tr>
+                            <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                              Sin resultados para el filtro.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      if (!groupByRisk) {
+                        return sortedStudents.map(renderStudentRow);
+                      }
+
+                      const groups = { alto: [], medio: [], bajo: [], pending: [] };
+                      for (const s of sortedStudents) {
+                        const r = computeRiskFromPct(s.currentPerformancePct);
+                        if (groups[r]) groups[r].push(s);
+                      }
+                      const groupMeta = [
+                        { key: "alto", label: "Riesgo alto", color: "var(--critical)", bg: "var(--critical-bg)" },
+                        { key: "medio", label: "Riesgo medio", color: "var(--watch)", bg: "var(--watch-bg)" },
+                        { key: "bajo", label: "Bajo riesgo", color: "var(--ok)", bg: "var(--ok-bg)" },
+                        { key: "pending", label: "Sin datos", color: "var(--muted)", bg: "var(--bg)" },
+                      ];
+                      return groupMeta.map(gm => {
+                        if (groups[gm.key].length === 0) return null;
+                        const isCollapsed = collapsedGroups.has(gm.key);
+                        return (
+                          <React.Fragment key={`group-${gm.key}`}>
+                            <tr
+                              onClick={() => toggleGroupCollapsed(gm.key)}
+                              style={{ cursor: "pointer", background: gm.bg, borderBottom: "1px solid var(--border)" }}
+                            >
+                              <td colSpan={20} style={{ padding: "8px 12px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, color: gm.color }}>
+                                  <span>{isCollapsed ? "▸" : "▾"}</span>
+                                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: gm.color }} />
+                                  <span>{gm.label}</span>
+                                  <span className="tag" style={{ background: "rgba(255,255,255,0.6)", color: gm.color }}>{groups[gm.key].length}</span>
+                                </div>
+                              </td>
+                            </tr>
+                            {!isCollapsed && groups[gm.key].map(renderStudentRow)}
+                          </React.Fragment>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -6344,6 +6615,13 @@ const contentKpis = useMemo(() => {
 
         </div>
       </main>
+
+      {/* ── Command Palette (Ctrl+K) ── */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={paletteCommands}
+      />
 
       {/* ── Floating AI button ── */}
       {overview && (
