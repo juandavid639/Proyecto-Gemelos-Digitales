@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { apiGet } from "../../utils/api";
+import { apiGet, apiDownloadUrl } from "../../utils/api";
 import { COLORS, colorForPct } from "../../utils/colors";
 import { fmtPct, fmtGrade10FromPct, computeRiskFromPct } from "../../utils/helpers";
 import StudentAvatar from "../ui/StudentAvatar";
@@ -22,6 +22,26 @@ export default function EvidenceReports({
 }) {
   const [seed, setSeed] = useState(0); // bump to re-randomize
   const [details, setDetails] = useState({}); // userId → { evidences, loading, error }
+  const [feedbackModal, setFeedbackModal] = useState(null); // { studentName, evidenceName, loading, data, error }
+
+  const openFeedback = async (student, evidence) => {
+    if (!evidence.linkedDropboxId) return;
+    setFeedbackModal({
+      studentName: student.displayName,
+      evidenceName: evidence.name || `Ítem ${evidence.gradeObjectId}`,
+      loading: true,
+      data: null,
+      error: null,
+    });
+    try {
+      const data = await apiGet(
+        `/brightspace/course/${orgUnitId}/dropbox/folder/${evidence.linkedDropboxId}/student/${student.userId}/feedback`
+      );
+      setFeedbackModal((prev) => prev && { ...prev, loading: false, data });
+    } catch (err) {
+      setFeedbackModal((prev) => prev && { ...prev, loading: false, error: String(err?.message || err) });
+    }
+  };
 
   // Pick one random student per band
   const samples = useMemo(() => {
@@ -184,6 +204,10 @@ export default function EvidenceReports({
               {evidences.slice(0, 6).map((e, i) => {
                 const isGraded = e.scorePct != null;
                 const evColor = isGraded ? colorForPct(e.scorePct, null) : "var(--muted)";
+                const hasDropbox = e.linkedDropboxId != null;
+                const downloadHref = hasDropbox
+                  ? apiDownloadUrl(`/brightspace/course/${orgUnitId}/dropbox/folder/${e.linkedDropboxId}/student/${student.userId}/download`)
+                  : null;
                 return (
                   <div key={i} style={{
                     display: "flex", alignItems: "center", gap: 8,
@@ -209,6 +233,45 @@ export default function EvidenceReports({
                     }}>
                       {isGraded ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
                     </span>
+                    {hasDropbox && (
+                      <>
+                        <a
+                          href={downloadHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Descargar entrega del estudiante (ZIP)"
+                          style={{
+                            fontSize: 10, fontWeight: 700,
+                            padding: "3px 7px", borderRadius: 6,
+                            background: "rgba(52, 120, 246, 0.12)",
+                            color: "var(--brand)",
+                            textDecoration: "none",
+                            border: "1px solid rgba(52, 120, 246, 0.25)",
+                            flexShrink: 0,
+                          }}
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          ⬇
+                        </a>
+                        <button
+                          type="button"
+                          title="Ver retroalimentación del docente"
+                          onClick={(ev) => { ev.stopPropagation(); openFeedback(student, e); }}
+                          style={{
+                            fontSize: 10, fontWeight: 700,
+                            padding: "3px 7px", borderRadius: 6,
+                            background: "rgba(255, 170, 0, 0.15)",
+                            color: "#b27300",
+                            border: "1px solid rgba(255, 170, 0, 0.3)",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                            fontFamily: "var(--font)",
+                          }}
+                        >
+                          💬
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -286,8 +349,121 @@ export default function EvidenceReports({
       </div>
 
       <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--bg)", borderRadius: 8, border: "1px dashed var(--border)", fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
-        💡 Estos informes son útiles para reuniones de coordinación o revisiones de calidad. Haz clic en un estudiante para abrir su gemelo digital completo.
+        💡 Estos informes son útiles para reuniones de coordinación o revisiones de calidad. Haz clic en un estudiante para abrir su gemelo digital completo. Usa ⬇ para descargar el trabajo y 💬 para ver la retroalimentación del docente.
       </div>
+
+      {feedbackModal && (
+        <div
+          onClick={() => setFeedbackModal(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(15, 23, 42, 0.55)",
+            backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--card)",
+              borderRadius: 14,
+              border: "1px solid var(--border)",
+              maxWidth: 640, width: "100%", maxHeight: "85vh",
+              overflow: "auto",
+              boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+            }}
+          >
+            <div style={{
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex", alignItems: "flex-start", gap: 12,
+              position: "sticky", top: 0, background: "var(--card)", zIndex: 2,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Retroalimentación del docente
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginTop: 2 }}>
+                  {feedbackModal.evidenceName}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  {feedbackModal.studentName}
+                </div>
+              </div>
+              <button
+                onClick={() => setFeedbackModal(null)}
+                style={{
+                  background: "transparent", border: "none",
+                  fontSize: 20, cursor: "pointer", color: "var(--muted)",
+                  padding: 4, lineHeight: 1,
+                }}
+                aria-label="Cerrar"
+              >✕</button>
+            </div>
+            <div style={{ padding: 18 }}>
+              {feedbackModal.loading ? (
+                <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", padding: 24 }}>
+                  Cargando retroalimentación...
+                </div>
+              ) : feedbackModal.error ? (
+                <div style={{ fontSize: 12, color: "var(--critical)", padding: 12, background: "var(--critical-bg)", borderRadius: 8 }}>
+                  Error: {feedbackModal.error}
+                </div>
+              ) : (() => {
+                const fb = feedbackModal.data || {};
+                const text = fb.Feedback?.Text || fb.Feedback?.Html || fb.feedback?.Text || fb.feedback?.Html || "";
+                const score = fb.Score ?? fb.score;
+                const files = fb.Files || fb.files || [];
+                const hasContent = text || score != null || (Array.isArray(files) && files.length > 0);
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {score != null && (
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase" }}>Puntaje:</span>
+                        <span style={{ fontSize: 18, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--brand)" }}>{score}</span>
+                      </div>
+                    )}
+                    {text && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Comentarios</div>
+                        <div
+                          style={{
+                            fontSize: 13, lineHeight: 1.5, color: "var(--text)",
+                            padding: 12, borderRadius: 8,
+                            background: "var(--bg)", border: "1px solid var(--border)",
+                            whiteSpace: "pre-wrap",
+                          }}
+                          dangerouslySetInnerHTML={{ __html: text }}
+                        />
+                      </div>
+                    )}
+                    {Array.isArray(files) && files.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>
+                          Archivos adjuntos del docente ({files.length})
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {files.map((f, idx) => (
+                            <div key={idx} style={{ fontSize: 12, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                              📎 {f.FileName || f.Name || `Archivo ${idx + 1}`}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {!hasContent && (
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", textAlign: "center", padding: 16 }}>
+                        Sin retroalimentación registrada para esta entrega.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

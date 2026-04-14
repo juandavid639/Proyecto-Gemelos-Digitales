@@ -158,35 +158,71 @@ const GLOBAL_STYLES = `
 
   /* ── Print Mode: Optimize for printing a student profile ── */
   @media print {
+    @page { margin: 1.5cm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { background: #fff !important; color: #000 !important; }
+    html, body { background: #fff !important; color: #000 !important; }
+
+    /* Hide chrome (sidebar, topbar, FABs, buttons, panels) */
     .app-sidebar, .app-topbar, .ai-fab, .sidebar-backdrop,
     .course-panel-overlay, .voice-btn, .topbar-icon-btn,
-    .btn:not(.print-visible), .main-tabs, .chip,
+    .main-tabs, .chip, .ai-panel,
     button:not(.print-visible) {
       display: none !important;
     }
+
+    /* When a drawer is open, ONLY print the drawer content — hide the rest */
+    body.drawer-is-open .app-main,
+    body.drawer-is-open main.app-main {
+      display: none !important;
+    }
+
+    /* Reset main content positioning */
     .app-main { margin-left: 0 !important; padding-top: 0 !important; }
     .app-content { padding: 0 !important; max-width: 100% !important; }
+
+    /* Cards: avoid page breaks inside */
     .kpi-card {
       break-inside: avoid;
       page-break-inside: avoid;
       box-shadow: none !important;
       border: 1px solid #ccc !important;
       margin-bottom: 12px !important;
+      padding: 14px !important;
     }
-    .drawer-enter { animation: none !important; transform: none !important; }
-    /* Drawer should fill the page when printing */
-    .print-drawer {
+
+    /* Drawer overlay → static, full-width when printing */
+    .drawer-print-mode {
+      position: static !important;
+      inset: auto !important;
+      background: #fff !important;
+      backdrop-filter: none !important;
+      display: block !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      z-index: auto !important;
+    }
+    .drawer-print-mode > div {
       position: static !important;
       width: 100% !important;
-      height: auto !important;
       max-width: 100% !important;
-      background: #fff !important;
-      border: none !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
       box-shadow: none !important;
+      border: none !important;
+      animation: none !important;
+      transform: none !important;
     }
-    /* Add print header */
+    .drawer-enter { animation: none !important; transform: none !important; }
+
+    /* Hide cesa-loader animations */
+    .cesa-loader-wrap, .cesa-water-text { display: none !important; }
+
+    /* Tables: keep rows together */
+    tr { page-break-inside: avoid; }
+    thead { display: table-header-group; }
+
     .print-only { display: block !important; }
   }
   .print-only { display: none; }

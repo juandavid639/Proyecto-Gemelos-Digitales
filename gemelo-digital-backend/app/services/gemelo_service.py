@@ -1770,6 +1770,17 @@ class GemeloService:
                             graded.append((float(weighted_num), float(weighted_den)))
 
                 if include_evidences:
+                    # Find linked dropbox folder ID for download/feedback links
+                    _assoc = it.get("AssociatedTool") or {}
+                    _tool_id = _assoc.get("ToolId")
+                    _tool_item = _assoc.get("ToolItemId")
+                    linked_dropbox_id = None
+                    if _tool_id in (1, 2000) and _tool_item is not None:
+                        try:
+                            linked_dropbox_id = int(_tool_item)
+                        except Exception:
+                            linked_dropbox_id = None
+
                     evidences.append(
                         {
                             "gradeObjectId": int(it.get("Id")),
@@ -1783,6 +1794,7 @@ class GemeloService:
                             "cortePeriod": corte_period,
                             "dueDate": due_dt.isoformat() if due_dt else None,
                             "lastModified": val.get("LastModified"),
+                            "linkedDropboxId": linked_dropbox_id,
                         }
                     )
 

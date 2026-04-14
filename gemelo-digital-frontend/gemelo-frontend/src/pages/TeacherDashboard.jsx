@@ -2156,10 +2156,19 @@ function Drawer({ open, onClose, title, subtitle, children }) {
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  // Add a class to <body> when drawer is open so the @media print CSS
+  // can hide the background dashboard and only print the drawer content.
+  React.useEffect(() => {
+    if (!open) return;
+    document.body.classList.add("drawer-is-open");
+    return () => document.body.classList.remove("drawer-is-open");
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div
+      className="drawer-print-mode"
       style={{ position: "fixed", inset: 0, background: "rgba(13,17,23,0.5)", display: "flex", justifyContent: "flex-end", zIndex: 200, backdropFilter: "blur(3px)" }}
       onClick={onClose}
     >

@@ -415,38 +415,134 @@ async def gemelo_grade_items(
     orgUnitId: int,
     svc: GemeloService = Depends(get_service),
 ):
-    """Return all grade items in the course with their metadata (Name, Weight,
-    DueDate, EndDate, MaxPoints, etc.). Used by the frontend to build the
-    course-wide due date calendar without needing to fetch per-student gemelos.
+    """Return all grade items + dropbox folders in the course with their
+    due dates. Used by the frontend to build the course-wide due date calendar.
+
+    Merges TWO sources:
+    1. Grade items (gradebook columns) — may have DueDate/EndDate
+    2. Dropbox folders (assignments) — usually have DueDate set even when
+       the linked grade item does not (Brightspace UX puts DueDate on the
+       dropbox folder, not the grade item).
+
+    Both sources are linked via AssociatedTool.ToolItemId on grade items.
 
     Returns:
-        {orgUnitId, count, items: [{id, name, weight, maxPoints, dueDate, endDate, gradeType}]}
+        {orgUnitId, count, items: [{id, name, weight, maxPoints, dueDate,
+                                    endDate, gradeType, source}]}
     """
+    import asyncio
+
+    async def _safe_grade_items():
+        try:
+            raw = await svc.bs.list_grade_items(orgUnitId)
+            if isinstance(raw, dict):
+                return raw.get("Items") or raw.get("items") or []
+            return raw if isinstance(raw, list) else []
+        except Exception:
+            return []
+
+    async def _safe_dropbox_folders():
+        try:
+            raw = await svc.bs.list_dropbox_folders(orgUnitId)
+            if isinstance(raw, dict):
+                return raw.get("Items") or raw.get("items") or []
+            return raw if isinstance(raw, list) else []
+        except Exception:
+            return []
+
     try:
-        raw = await svc.bs.list_grade_items(orgUnitId)
-        if isinstance(raw, dict):
-            data_list = raw.get("Items") or raw.get("items") or []
-        else:
-            data_list = raw if isinstance(raw, list) else []
+        grade_items, dropbox_folders = await asyncio.gather(
+            _safe_grade_items(),
+            _safe_dropbox_folders(),
+        )
+
+        # Build dropbox lookup by Id (and by GradeItemId for cross-ref)
+        dropbox_by_id = {}
+        dropbox_by_grade_item = {}
+        for df in dropbox_folders:
+            if not isinstance(df, dict):
+                continue
+            df_id = df.get("Id") or df.get("Identifier")
+            if df_id is not None:
+                dropbox_by_id[str(df_id)] = df
+            grade_item_id = df.get("GradeItemId")
+            if grade_item_id is not None:
+                dropbox_by_grade_item[str(grade_item_id)] = df
 
         items = []
-        for it in data_list:
+        seen_dropbox_ids = set()
+
+        # 1. Grade items — try to enrich with dropbox folder due dates
+        for it in grade_items:
             if not isinstance(it, dict):
                 continue
+            grade_id = it.get("Id") or it.get("Identifier")
+            name = it.get("Name")
+            due_date = it.get("DueDate")
+            end_date = it.get("EndDate")
+
+            # Try to find an associated dropbox folder via AssociatedTool
+            # Brightspace uses ToolId=1 OR ToolId=2000 for Dropbox depending on
+            # the API version. Try both.
+            associated = it.get("AssociatedTool") or {}
+            tool_item_id = associated.get("ToolItemId")
+            tool_id = associated.get("ToolId")
+            linked_dropbox = None
+            if tool_id in (1, 2000) and tool_item_id is not None:
+                linked_dropbox = dropbox_by_id.get(str(tool_item_id))
+            if not linked_dropbox and grade_id is not None:
+                linked_dropbox = dropbox_by_grade_item.get(str(grade_id))
+
+            if linked_dropbox:
+                seen_dropbox_ids.add(str(linked_dropbox.get("Id") or ""))
+                # Prefer dropbox due date if grade item doesn't have one
+                if not due_date:
+                    due_date = linked_dropbox.get("DueDate")
+                if not end_date:
+                    end_date = linked_dropbox.get("DueDate") or linked_dropbox.get("EndDate")
+
             items.append({
-                "id": it.get("Id") or it.get("Identifier"),
-                "name": it.get("Name"),
+                "id": grade_id,
+                "name": name,
                 "weightPct": it.get("Weight"),
                 "maxPoints": it.get("MaxPoints"),
-                "dueDate": it.get("DueDate"),
-                "endDate": it.get("EndDate"),
+                "dueDate": due_date,
+                "endDate": end_date,
                 "gradeType": it.get("GradeType"),
                 "categoryId": it.get("CategoryId"),
+                "source": "grade_item",
+                "linkedDropboxId": (linked_dropbox or {}).get("Id"),
             })
 
-        return {"orgUnitId": orgUnitId, "count": len(items), "items": items}
+        # 2. Dropbox folders that aren't linked to any grade item yet
+        #    (e.g. assignments created but not yet graded)
+        for df in dropbox_folders:
+            if not isinstance(df, dict):
+                continue
+            df_id = df.get("Id") or df.get("Identifier")
+            if str(df_id) in seen_dropbox_ids:
+                continue
+            items.append({
+                "id": df_id,
+                "name": df.get("Name"),
+                "weightPct": None,
+                "maxPoints": None,
+                "dueDate": df.get("DueDate"),
+                "endDate": df.get("DueDate") or df.get("EndDate"),
+                "gradeType": "Dropbox",
+                "categoryId": df.get("CategoryId"),
+                "source": "dropbox",
+                "linkedDropboxId": df_id,
+            })
+
+        return {
+            "orgUnitId": orgUnitId,
+            "count": len(items),
+            "gradeItemsCount": len(grade_items),
+            "dropboxFoldersCount": len(dropbox_folders),
+            "items": items,
+        }
     except Exception as e:
-        # Graceful: return empty list instead of 500 if the user lacks scope
         msg = str(e)
         if "403" in msg or "401" in msg or "404" in msg:
             return {"orgUnitId": orgUnitId, "count": 0, "items": [], "error": msg[:200]}

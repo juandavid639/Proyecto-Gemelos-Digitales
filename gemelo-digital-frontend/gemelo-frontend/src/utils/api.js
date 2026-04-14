@@ -12,6 +12,19 @@ export function apiUrl(path) {
   return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
 }
 
+export { API_BASE_URL };
+
+/**
+ * Build a URL for a binary download endpoint, appending the sid as query param
+ * so the browser can open it in a new tab without needing Authorization header.
+ */
+export function apiDownloadUrl(path) {
+  const sid = localStorage.getItem("gemelo_sid") || "";
+  const sep = path.includes("?") ? "&" : "?";
+  const base = apiUrl(path);
+  return sid ? `${base}${sep}sid=${encodeURIComponent(sid)}` : base;
+}
+
 export async function apiGet(path, opts = {}) {
   const _sid = localStorage.getItem("gemelo_sid");
   const _authHeader = _sid ? { "Authorization": `Bearer ${_sid}` } : {};

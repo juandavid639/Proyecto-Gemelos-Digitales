@@ -1126,6 +1126,86 @@ async def brightspace_dropbox_folder(request: Request, org_unit_id: int, folder_
     return JSONResponse(status_code=status, content=data)
 
 
+@app.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/submissions")
+async def brightspace_dropbox_submissions(
+    request: Request, org_unit_id: int, folder_id: int
+):
+    """List all submissions for a dropbox folder. Returns array of submissions
+    with files, submitted dates, and entity (user/group) info."""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+        f"/{org_unit_id}/dropbox/folders/{folder_id}/submissions/"
+    )
+    status, data = await _bs_get(url, _auth_headers(token))
+    return JSONResponse(status_code=status, content=data)
+
+
+@app.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/download")
+async def brightspace_dropbox_download(
+    request: Request, org_unit_id: int, folder_id: int, user_id: int
+):
+    """Download all files submitted by a student to a dropbox folder.
+    Returns a ZIP file (Brightspace native behavior).
+    Requires scope: dropbox:folders:read"""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+        f"/{org_unit_id}/dropbox/folders/{folder_id}/submissions/{user_id}/download"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.get(url, headers=_auth_headers(token))
+        if res.status_code != 200:
+            return JSONResponse(
+                status_code=res.status_code,
+                content={"error": "download_failed", "status": res.status_code, "detail": res.text[:300]},
+            )
+        from fastapi.responses import Response
+        ct = res.headers.get("content-type", "application/zip")
+        # Try to extract filename from Content-Disposition header
+        cd = res.headers.get("content-disposition", "")
+        filename = f"submission_{folder_id}_{user_id}.zip"
+        if "filename=" in cd:
+            try:
+                filename = cd.split("filename=", 1)[1].strip().strip('"').strip("'")
+            except Exception:
+                pass
+        return Response(
+            content=res.content,
+            media_type=ct,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except Exception as e:
+        logger.warning("dropbox download failed folder=%s user=%s err=%s", folder_id, user_id, str(e)[:200])
+        return JSONResponse(status_code=500, content={"error": "download_exception", "detail": str(e)[:300]})
+
+
+@app.get("/brightspace/course/{org_unit_id}/dropbox/folder/{folder_id}/student/{user_id}/feedback")
+async def brightspace_dropbox_feedback(
+    request: Request, org_unit_id: int, folder_id: int, user_id: int
+):
+    """Get the teacher's feedback for a student's dropbox submission.
+    Returns the Feedback object (text, rubric, files, score, etc.).
+    Requires scope: dropbox:folders:read"""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    # entityType=1 is "User" (vs 2 = Group)
+    url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+        f"/{org_unit_id}/dropbox/folders/{folder_id}/feedback/1/{user_id}"
+    )
+    status, data = await _bs_get(url, _auth_headers(token))
+    return JSONResponse(status_code=status, content=data)
+
+
 @app.get("/brightspace/course/{org_unit_id}/assignments/{assignment_id}")
 async def brightspace_assignment(request: Request, org_unit_id: int, assignment_id: int):
     token, err = _require_token_from_request(request)
