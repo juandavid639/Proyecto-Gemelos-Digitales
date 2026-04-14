@@ -25,7 +25,7 @@
         { "name": "ELEVENLABS_VOICE_ID", "value": "pFZP5JQG7iQjIQuC4Bku" },
         {
           "name": "BRIGHTSPACE_SCOPE",
-          "value": "core:*:* Application:*:* Data:*:* grades:gradeobjects:read grades:grades:read outcomes:sets:read content:modules:read"
+          "value": "core:*:* Application:*:* Data:*:* enrollment:own_enrollment:read enrollment:orgunit:read users:own_profile:read users:profile:read grades:gradeobjects:read grades:gradevalues:read grades:own_grades:read grades:gradeschemes:read grades:gradesettings:read grades:gradestatistics:read grades:gradecategories:read outcomes:sets:read outcomes:alignments:read content:modules:readonly content:topics:readonly content:toc:read content:completions:read rubrics:objects:read rubrics:assessments:read dropbox:folders:read discussions:forums:readonly discussions:topics:readonly quizzing:quizzes:read quizzing:attempts:read organizations:organization:read orgunits:course:read role:detail:read"
         },
         {
           "name": "BRIGHTSPACE_BASE_URL",

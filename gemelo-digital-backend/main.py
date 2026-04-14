@@ -91,7 +91,7 @@ BRIGHTSPACE_TOKEN_URL = os.getenv("BRIGHTSPACE_TOKEN_URL", "https://auth.brights
 CLIENT_ID     = os.getenv("BRIGHTSPACE_CLIENT_ID",     "")
 CLIENT_SECRET = os.getenv("BRIGHTSPACE_CLIENT_SECRET", "")
 REDIRECT_URI  = os.getenv("BRIGHTSPACE_REDIRECT_URI",  "")
-SCOPE         = os.getenv("BRIGHTSPACE_SCOPE",         "core:*:* enrollment:orgunit:read users:profile:read")
+SCOPE         = os.getenv("BRIGHTSPACE_SCOPE",         "core:*:* Application:*:* Data:*:* enrollment:own_enrollment:read enrollment:orgunit:read users:own_profile:read users:profile:read grades:gradeobjects:read grades:gradevalues:read grades:own_grades:read grades:gradeschemes:read grades:gradesettings:read grades:gradestatistics:read grades:gradecategories:read outcomes:sets:read outcomes:alignments:read content:modules:readonly content:topics:readonly content:toc:read content:completions:read rubrics:objects:read rubrics:assessments:read dropbox:folders:read discussions:forums:readonly discussions:topics:readonly quizzing:quizzes:read quizzing:attempts:read organizations:organization:read orgunits:course:read role:detail:read")
 FRONTEND_BASE = os.getenv("FRONTEND_BASE_URL",         "").rstrip("/")
 
 # Cookie config
@@ -447,6 +447,7 @@ async def auth_me(request: Request, sid: str | None = Query(default=None)):
             "user_name":  session.get("user_name"),
             "user_email": session.get("user_email"),
             "role":       session.get("role"),
+            "all_roles":  session.get("all_roles") or [],
             "iat":        session.get("iat"),
             "auth_method": method,
         })
@@ -476,6 +477,8 @@ async def auth_me(request: Request, sid: str | None = Query(default=None)):
                 "user_id":    session.get("user_id"),
                 "user_name":  session.get("user_name"),
                 "user_email": session.get("user_email"),
+                "role":       session.get("role"),
+                "all_roles":  session.get("all_roles") or [],
                 "iat":        session.get("iat"),
                 "auth_method": "oauth",
             })
@@ -543,6 +546,45 @@ async def _fetch_all_enrollments(
         )
         status, data = await _bs_get(url, headers, params)
         if status != 200:
+            break
+
+        items = data.get("Items") or data.get("items") or []
+        if not items:
+            break
+
+        all_items.extend(items)
+        fetched += len(items)
+
+        paging = data.get("PagingInfo") or data.get("pagingInfo") or {}
+        if not paging.get("HasMoreItems") and not paging.get("hasMoreItems"):
+            break
+        bookmark = paging.get("Bookmark") or paging.get("bookmark")
+        if not bookmark:
+            break
+
+    return all_items
+
+
+async def _fetch_my_enrollments(
+    headers: dict,
+    limit: int = 500,
+) -> list:
+    """Fetch the authenticated user's OWN enrollments via /enrollments/myenrollments/.
+    Requires scope: enrollment:own_enrollment:read
+    Returns ALL enrollments including where the user is a student (Estudiante EF)."""
+    all_items = []
+    bookmark = None
+    fetched = 0
+
+    while fetched < limit:
+        params: dict = {"orgUnitTypeId": 3}
+        if bookmark:
+            params["bookmark"] = bookmark
+
+        url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/enrollments/myenrollments/"
+        status, data = await _bs_get(url, headers, params)
+        if status != 200:
+            logger.warning("myenrollments failed status=%s data=%s", status, str(data)[:200])
             break
 
         items = data.get("Items") or data.get("items") or []
@@ -779,17 +821,55 @@ async def brightspace_courses_enrolled(
     active_only: bool = Query(default=True),
     limit:       int  = Query(default=200),
 ):
+    """Returns the authenticated user's own enrollments (including courses where
+    they are a student). Uses /enrollments/myenrollments/ as the primary source
+    because it includes ALL enrollments for the current user (instructor + student).
+    Falls back to admin-level /enrollments/users/{uid}/orgUnits/ if myenrollments
+    fails (e.g., token missing enrollment:own_enrollment:read scope)."""
     token, err = _require_token_from_request(request)
     if err:
         return err
     headers = _auth_headers(token)
-    user_id, err = await _get_whoami_id(headers)
-    if err:
-        return err
-    items = await _fetch_all_enrollments(headers, user_id, org_unit_type_id=3, limit=limit)
-    offerings = [_normalize_offering(i.get("OrgUnit") or {}) for i in items]
+
+    # Primary: myenrollments (requires enrollment:own_enrollment:read)
+    items = await _fetch_my_enrollments(headers, limit=limit)
+
+    # Fallback: admin-level endpoint
+    if not items:
+        user_id, err_uid = await _get_whoami_id(headers)
+        if not err_uid and user_id:
+            items = await _fetch_all_enrollments(headers, user_id, org_unit_type_id=3, limit=limit)
+
+    offerings = []
+    for i in items:
+        ou = i.get("OrgUnit") or {}
+        offering = _normalize_offering(ou)
+        # Include roleName from Access (present in both myenrollments and users/{id}/orgUnits/)
+        access = i.get("Access") or {}
+        offering["roleName"] = access.get("ClasslistRoleName") or ""
+        offerings.append(offering)
+
     if active_only:
         offerings = [o for o in offerings if o["isActive"]]
+
+    # Update session's all_roles from the detected roles
+    detected_roles = {o["roleName"] for o in offerings if o.get("roleName")}
+    if detected_roles:
+        sid = _get_session_id(request)
+        if sid:
+            from app.state import SESSION_STORE
+            import threading
+            with threading.Lock():
+                if sid in SESSION_STORE:
+                    SESSION_STORE[sid]["all_roles"] = list(detected_roles)
+                    # Set primary role if not already set
+                    if not SESSION_STORE[sid].get("role"):
+                        ROLE_PRIORITY = ["Super Administrator", "Coordinador Administrativo", "Instructor", "Estudiante EF"]
+                        for pr in ROLE_PRIORITY:
+                            if pr in detected_roles:
+                                SESSION_STORE[sid]["role"] = pr
+                                break
+
     return {"count": len(offerings), "items": offerings}
 
 

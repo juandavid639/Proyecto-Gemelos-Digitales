@@ -76,13 +76,40 @@ export function AuthProvider({ children }) {
         });
         const data = await res.json();
         if (data.authenticated) {
-          // Compute app-level roles
-          const allRolesRaw = data.all_roles || (data.role ? [data.role] : []);
+          // Initial roles from /auth/me (may be empty on first login before courses fetched)
+          let allRolesRaw = data.all_roles || (data.role ? [data.role] : []);
+
+          // Fetch enrolled courses to determine ALL roles from actual enrollments
+          // This is the authoritative source: /enrollments/myenrollments/ returns
+          // every course with its roleName, so we can detect dual-role users reliably.
+          try {
+            const coursesRes = await fetch(
+              apiUrl(`/brightspace/courses/enrolled?active_only=false&limit=200`),
+              {
+                credentials: "include",
+                headers: _sid ? { "Authorization": `Bearer ${_sid}` } : {},
+              }
+            );
+            if (coursesRes.ok) {
+              const coursesData = await coursesRes.json();
+              const items = Array.isArray(coursesData?.items) ? coursesData.items : [];
+              const rolesFromCourses = [...new Set(
+                items.map(c => String(c.roleName || "").trim()).filter(r => r)
+              )];
+              if (rolesFromCourses.length > 0) {
+                allRolesRaw = rolesFromCourses;
+              }
+            }
+          } catch {
+            // If courses fetch fails, fall back to roles from /auth/me
+          }
+
           const appRoles = mapAllRoles(allRolesRaw);
           const primaryRole = mapSingleRole(data.role) || appRoles[0];
 
           const user = {
             ...data,
+            all_roles: allRolesRaw,
             appRole: primaryRole,
             appRoles, // ["instructor", "student"] for dual-role users
             isDualRole: appRoles.length > 1,
