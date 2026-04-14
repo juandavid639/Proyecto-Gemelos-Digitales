@@ -628,10 +628,21 @@ class GemeloService:
             if uid is None:
                 continue
 
+            # Extract email from classlist entry (EmailAddress/UserName fields)
+            user_obj = it.get("User") or it
+            email = (
+                user_obj.get("EmailAddress")
+                or user_obj.get("emailAddress")
+                or it.get("EmailAddress")
+                or it.get("emailAddress")
+                or None
+            )
+
             students.append(
                 {
                     "userId": uid,
                     "displayName": _display_name(it),
+                    "email": email,
                     "roleName": role,
                 }
             )

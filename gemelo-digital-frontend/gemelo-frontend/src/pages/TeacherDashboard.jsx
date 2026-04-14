@@ -17,6 +17,11 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import StudentAvatar from "../components/ui/StudentAvatar";
+import Breadcrumb from "../components/ui/Breadcrumb";
+import LastUpdated from "../components/ui/LastUpdated";
+import useStudentNotes from "../hooks/useStudentNotes";
+import useCompactMode from "../hooks/useCompactMode";
 /**
  * =========================
  * Config
@@ -3143,12 +3148,8 @@ function StudentCard({ s, onOpen, weakestMacro }) {
     >
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        {/* Avatar circle */}
-        <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--brand-light)", border: "2px solid var(--brand-light2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <span style={{ fontSize: 14, fontWeight: 900, color: "var(--brand)" }}>
-            {(s.displayName || "?").charAt(0).toUpperCase()}
-          </span>
-        </div>
+        {/* Avatar */}
+        <StudentAvatar userId={s.userId} name={s.displayName} size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.displayName}</div>
           <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 1 }}>ID {s.userId}</div>
@@ -3220,7 +3221,7 @@ function GradeDistributionCard({ studentRows, thresholds }) {
   const zeros  = rows.filter(s => s.currentPerformancePct == null);
 
   return (
-    <Card title="Distribución de notas" accent="brand">
+    <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Distribución de notas <InfoTooltip text="Histograma de notas de los estudiantes en rangos de 1 punto. Los colores reflejan el estado: rojo=crítico (<5), amarillo=seguimiento (5-7), verde=óptimo (≥7). Excluye columnas 'Corte' para evitar doble conteo." /></span>} accent="brand">
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {bands.map(b => (
           <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -3519,6 +3520,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
 // ──────────────────────────────────────────────
 function AppTopbar({
   isMobile, onOpenSidebar, darkMode, setDarkMode,
+  compact, toggleCompact,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
   authUser, isDualRole, onGoHome,
@@ -3579,10 +3581,28 @@ function AppTopbar({
 
         <button
           className="topbar-icon-btn"
+          onClick={toggleCompact}
+          title={compact ? "Modo normal" : "Modo compacto (más densidad)"}
+          aria-label={compact ? "Desactivar modo compacto" : "Activar modo compacto"}
+          style={compact ? { borderColor: "var(--brand)", color: "var(--brand)" } : undefined}
+        >
+          {compact ? "◱" : "◰"}
+        </button>
+        <button
+          className="topbar-icon-btn"
           onClick={() => setDarkMode((v) => !v)}
           title="Cambiar tema"
+          aria-label="Cambiar tema claro/oscuro"
         >
           {darkMode ? "☀️" : "🌙"}
+        </button>
+        <button
+          className="topbar-icon-btn"
+          onClick={() => window.print()}
+          title="Imprimir vista actual"
+          aria-label="Imprimir vista actual"
+        >
+          🖨
         </button>
 
         {/* User avatar with initials */}
@@ -4098,6 +4118,16 @@ export default function TeacherDashboard() {
   const [studentRows, setStudentRows] = useState([]);
   const [raDashboard, setRaDashboard] = useState(null);
 
+  // Last data fetch timestamp + refresh trigger
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const handleRefresh = React.useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  // Compact mode
+  const { compact, toggleCompact } = useCompactMode();
+
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
 
@@ -4439,6 +4469,7 @@ export default function TeacherDashboard() {
           const base = {
             userId: Number(userId),
             displayName: s.displayName ?? s.DisplayName ?? "—",
+            email: s.email ?? s.EmailAddress ?? null,
             roleName: s.roleName ?? "—",
             isLoading: true,
             risk: "cargando",
@@ -4579,13 +4610,16 @@ export default function TeacherDashboard() {
         setErr(String(e?.message || e));
         setLoading(false);
       }
+      // Mark the data as fetched NOW (after successful or attempted load)
+      if (isMounted) setLastUpdate(Date.now());
     })();
 
     return () => {
       isMounted = false;
       controller.abort();
     };
-  }, [orgUnitId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgUnitId, refreshKey]);
 
   /**
    * Load course info + content root
@@ -4630,7 +4664,8 @@ export default function TeacherDashboard() {
       alive = false;
       controller.abort();
     };
-  }, [orgUnitId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgUnitId, refreshKey]);
 
   /**
    * Load student detail
@@ -4686,6 +4721,11 @@ export default function TeacherDashboard() {
           }
         }
 
+        // Enrich with email from studentRows (the list endpoint includes it)
+        const rowMatch = studentRows.find((r) => r.userId === selectedStudent.userId);
+        if (rowMatch?.email && !g.email) {
+          g.email = rowMatch.email;
+        }
         setStudentDetail(g);
       } catch (e) {
         if (controller.signal.aborted || !alive) return;
@@ -5150,6 +5190,7 @@ const contentKpis = useMemo(() => {
     { id: "resumen", label: "Resumen", icon: "📊" },
     { id: "evidencias", label: "Evidencias", icon: "📋", count: drawerEvidences.length || undefined },
     { id: "unidades", label: "Unidades", icon: "🎯", count: drawerUnits.length || undefined },
+    { id: "notas", label: "Mis notas", icon: "📝" },
     ...(drawerPrescription.length
       ? [{ id: "prescripcion", label: "Intervención", icon: "💊", count: drawerPrescription.length }]
       : []),
@@ -5157,6 +5198,9 @@ const contentKpis = useMemo(() => {
       ? [{ id: "calidad", label: "Calidad", icon: "🔍" }]
       : []),
   ];
+
+  // Private teacher notes per student (localStorage)
+  const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
 
   const makeSort = (key) => ({
     active: sortKey === key,
@@ -5418,6 +5462,8 @@ const contentKpis = useMemo(() => {
         onOpenSidebar={() => setSidebarOpen(true)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
+        compact={compact}
+        toggleCompact={toggleCompact}
         orgUnitInput={orgUnitInput}
         setOrgUnitInput={setOrgUnitInput}
         setOrgUnitId={setOrgUnitId}
@@ -5463,6 +5509,12 @@ const contentKpis = useMemo(() => {
 
         {/* Page header */}
         <div className="fade-up tab-enter" style={{ marginBottom: 20 }}>
+          {/* Breadcrumb */}
+          <Breadcrumb items={[
+            ...(isDualRole ? [{ label: "Inicio", icon: "🏠", onClick: () => navigate("/") }] : []),
+            { label: "Mis cursos", icon: "📚", onClick: handleOpenCoursePanel },
+            { label: courseInfo?.Name || `Curso ${orgUnitId}` },
+          ]} />
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
@@ -5477,7 +5529,8 @@ const contentKpis = useMemo(() => {
                 {courseInfo?.StartDate ? ` · ${new Date(courseInfo.StartDate).getFullYear()}` : ""}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <LastUpdated timestamp={lastUpdate} onRefresh={handleRefresh} loading={loading} />
               <StatusBadge status={courseStatus} />
             </div>
           </div>
@@ -5685,7 +5738,7 @@ const contentKpis = useMemo(() => {
 
           {/* ── Riesgo académico + Distribución apilados en 1 columna ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Card title="Riesgo académico" accent="pending">
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Riesgo académico <InfoTooltip text="Distribución de los estudiantes según su nota actual: Alto (<5.0), Medio (5.0–7.0), Bajo (≥7.0). Calculado solo con notas reales del gradebook, excluye columnas 'Corte'." /></span>} accent="pending">
               <div style={{ width: "100%", height: 200 }}>
                 <ResponsiveContainer>
                   <PieChart>
@@ -5754,7 +5807,7 @@ const contentKpis = useMemo(() => {
 
           <div ref={priorityRef}>
           <Card
-            title="Estudiantes prioritarios" accent="critical"
+            title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Estudiantes prioritarios <InfoTooltip text="Estudiantes que requieren tu atención inmediata: nota crítica (<5), cobertura baja (<60%), ítems vencidos sin calificar o pendientes de calificación. Ordenados por nivel de riesgo." /></span>} accent="critical"
             right={
               assignmentRiskData.length > 0
                 ? <span className="tag" style={{ background: "var(--critical-bg)", color: "#B42318" }}>Requieren atención</span>
@@ -5885,7 +5938,7 @@ const contentKpis = useMemo(() => {
           </div>
 
           <div ref={learningOutcomesRef}>
-          <Card title="Prioridad académica" accent="brand">
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Prioridad académica <InfoTooltip text="Resultados de Aprendizaje (RA) del curso ordenados de menor a mayor desempeño. El RA en primera posición es donde tus estudiantes están más débiles — prioriza refuerzo ahí." /></span>} accent="brand">
             <div
               style={{
                 display: "flex",
@@ -6345,6 +6398,40 @@ const contentKpis = useMemo(() => {
           </Card>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* ── Student header: photo + quick actions ── */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 14px", background: "var(--card)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
+              <StudentAvatar userId={selectedStudent?.userId} name={selectedStudent?.displayName} size={56} />
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>
+                  {selectedStudent?.displayName || "Estudiante"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+                  ID {selectedStudent?.userId ?? "—"}
+                  {studentDetail?.email && <> · {studentDetail.email}</>}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {studentDetail?.email && (
+                  <a
+                    href={`mailto:${studentDetail.email}?subject=${encodeURIComponent("Sobre tu curso: " + (courseInfo?.Name || ""))}`}
+                    className="btn"
+                    style={{ fontSize: 11, padding: "6px 10px", textDecoration: "none" }}
+                    title="Enviar correo al estudiante"
+                  >
+                    ✉ Email
+                  </a>
+                )}
+                <button
+                  className="btn"
+                  onClick={() => window.print()}
+                  style={{ fontSize: 11, padding: "6px 10px" }}
+                  title="Imprimir expediente del estudiante"
+                >
+                  🖨 Imprimir
+                </button>
+              </div>
+            </div>
+
             {/* ── Hero KPI row with circular rings ── */}
             <div style={{ display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap" }}>
               {/* Nota ring */}
@@ -6737,6 +6824,50 @@ const contentKpis = useMemo(() => {
                   Flags generados por el motor de calidad del gemelo. Indican posibles inconsistencias en rúbricas, criterios no mapeados, o datos ausentes.
                 </div>
                 <QualityFlagsBlock flags={drawerQcFlags} />
+              </div>
+            )}
+
+            {drawerTab === "notas" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Card title="Mis notas privadas" right={
+                  studentNotesHook.lastUpdated ? (
+                    <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600 }}>
+                      Guardado: {new Date(studentNotesHook.lastUpdated).toLocaleString("es-CO")}
+                    </span>
+                  ) : null
+                }>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
+                    🔒 Estas notas son <strong>privadas y locales</strong> a tu navegador. No se comparten con el estudiante ni con otros docentes. Útil para registrar observaciones, acuerdos, recordatorios.
+                  </div>
+                  <textarea
+                    value={studentNotesHook.notes}
+                    onChange={(e) => studentNotesHook.setNotes(e.target.value)}
+                    placeholder="Escribe aquí tus observaciones sobre este estudiante…"
+                    aria-label="Notas privadas del estudiante"
+                    style={{
+                      width: "100%", minHeight: 200, padding: 12,
+                      borderRadius: 10, border: "1px solid var(--border)",
+                      background: "var(--bg)", color: "var(--text)",
+                      fontFamily: "var(--font)", fontSize: 13, lineHeight: 1.5,
+                      outline: "none", resize: "vertical",
+                    }}
+                  />
+                  {studentNotesHook.notes && (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("¿Borrar estas notas definitivamente?")) {
+                            studentNotesHook.clearNotes();
+                          }
+                        }}
+                        className="btn"
+                        style={{ fontSize: 11, padding: "5px 10px", color: "var(--critical)", borderColor: "var(--critical-border)" }}
+                      >
+                        🗑 Borrar notas
+                      </button>
+                    </div>
+                  )}
+                </Card>
               </div>
             )}
           </div>

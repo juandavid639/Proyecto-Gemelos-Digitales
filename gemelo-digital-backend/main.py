@@ -141,7 +141,10 @@ def _require_session(request: Request):
 def _require_token_from_request(request: Request) -> tuple[str, JSONResponse | None]:
     """
     Versión legacy-compatible: devuelve (token, None) o (None, JSONResponse 401).
-    Acepta sesión via cookie O via Authorization: Bearer <session_id> header.
+    Acepta sesión via:
+    1. Authorization: Bearer <session_id> header
+    2. Cookie gemelo_session_id
+    3. Query param ?sid= (útil para <img> / <a download> que no pueden setear headers)
     """
     # 1. Header Authorization: Bearer <session_id>
     auth_header = request.headers.get("Authorization", "")
@@ -156,6 +159,13 @@ def _require_token_from_request(request: Request) -> tuple[str, JSONResponse | N
     sid = _get_session_id(request)
     if sid:
         token = get_access_token(sid)
+        if token:
+            return token, None
+
+    # 3. Query param (for <img> src, downloads, etc.)
+    sid_query = request.query_params.get("sid")
+    if sid_query:
+        token = get_access_token(sid_query.strip())
         if token:
             return token, None
 
@@ -901,6 +911,32 @@ async def brightspace_course(request: Request, org_unit_id: int):
     url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/courses/{org_unit_id}"
     status, data = await _bs_get(url, _auth_headers(token))
     return JSONResponse(status_code=status, content=data)
+
+
+@app.get("/brightspace/user/{user_id}/image")
+async def brightspace_user_image(request: Request, user_id: str):
+    """Proxy the user's profile image from Brightspace.
+    Returns the image bytes with appropriate content-type.
+    Requires scope: users:profile:read"""
+    token, err = _require_token_from_request(request)
+    if err:
+        return err
+    url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/profile/user/{user_id}/image"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(url, headers=_auth_headers(token))
+        if res.status_code != 200:
+            return JSONResponse(status_code=404, content={"error": "image_not_available"})
+        from fastapi.responses import Response
+        ct = res.headers.get("content-type", "image/jpeg")
+        return Response(
+            content=res.content,
+            media_type=ct,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except Exception as e:
+        logger.warning("user_image fetch failed user=%s err=%s", user_id, str(e)[:200])
+        return JSONResponse(status_code=404, content={"error": "image_fetch_failed"})
 
 
 @app.get("/brightspace/course/{org_unit_id}/classlist")
