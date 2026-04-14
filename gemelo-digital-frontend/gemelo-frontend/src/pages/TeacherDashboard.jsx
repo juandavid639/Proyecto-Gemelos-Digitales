@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
+import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
   BarChart,
@@ -15,6 +16,7 @@ import {
   Line,
   ReferenceLine,
 } from "recharts";
+import { useAuth } from "../context/AuthContext";
 /**
  * =========================
  * Config
@@ -3519,7 +3521,7 @@ function AppTopbar({
   isMobile, onOpenSidebar, darkMode, setDarkMode,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
-  authUser,
+  authUser, isDualRole, onGoHome,
 }) {
   return (
     <header className="app-topbar">
@@ -3556,6 +3558,17 @@ function AppTopbar({
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {isDualRole && (
+          <button
+            className="btn"
+            onClick={onGoHome}
+            title="Volver al inicio"
+            aria-label="Volver al inicio"
+            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 10 }}
+          >
+            🏠 {isMobile ? "" : "Inicio"}
+          </button>
+        )}
         <button
           className="btn btn-primary"
           onClick={handleOpenCoursePanel}
@@ -3902,6 +3915,12 @@ export default function TeacherDashboard() {
     injectStyles();
   }, []);
 
+  // Read initialOrgUnitId from AuthContext — AuthContext claims sessionStorage
+  // early (before lazy-loaded TeacherDashboard mounts), so we rely on the
+  // context value instead of reading sessionStorage directly here.
+  const { initialOrgUnitId: ctxInitialOrgUnitId, isDualRole } = useAuth();
+  const navigate = useNavigate();
+
   const isNarrow = useMediaQuery("(max-width: 900px)");
   const isMobile = useMediaQuery("(max-width: 640px)");
 
@@ -4027,30 +4046,33 @@ export default function TeacherDashboard() {
   }, [activeSection]);
 
   const [orgUnitId, setOrgUnitId] = useState(() => {
-    // Leer params de URL del OAuth callback
+    // Priority 1: AuthContext initial value (from LTI hash fragment or RoleHome selection)
+    if (ctxInitialOrgUnitId && Number(ctxInitialOrgUnitId) > 0) {
+      return Number(ctxInitialOrgUnitId);
+    }
+    // Priority 2: URL query params (OAuth callback flow)
     const params = new URLSearchParams(window.location.search);
     const ou = params.get("orgUnitId");
     const fl = params.get("first_login");
     if (fl === "1") sessionStorage.setItem("gemelo_first_login", "1");
-    // El sid viene en el hash fragment (#gemelo:SID:ou:1) — se lee en useEffect, no aquí
 
     if (ou && Number(ou) > 0) {
-      // Limpiar URL sin recargar
       const cleanUrl = window.location.pathname;
       window.history.replaceState(null, "", cleanUrl);
-      sessionStorage.setItem("gemelo_pending_org", ou);
       return Number(ou);
     }
-    // Limpiar URL si tiene params
     if (params.toString()) {
       window.history.replaceState(null, "", window.location.pathname);
     }
-    // Leer de sessionStorage si viene de redirect interno
+    // Priority 3: sessionStorage fallback (in case AuthContext didn't clear it)
     const saved = sessionStorage.getItem("gemelo_pending_org");
     if (saved && Number(saved) > 0) return Number(saved);
     return DEFAULT_ORG_UNIT_ID;
   });
   const [orgUnitInput, setOrgUnitInput] = useState(() => {
+    if (ctxInitialOrgUnitId && Number(ctxInitialOrgUnitId) > 0) {
+      return String(ctxInitialOrgUnitId);
+    }
     const params = new URLSearchParams(window.location.search);
     const ou = params.get("orgUnitId");
     if (ou && Number(ou) > 0) return ou;
@@ -4058,6 +4080,15 @@ export default function TeacherDashboard() {
     if (saved && Number(saved) > 0) return saved;
     return String(DEFAULT_ORG_UNIT_ID || "");
   });
+
+  // If AuthContext provides initialOrgUnitId AFTER mount (e.g., slow auth), apply it
+  useEffect(() => {
+    if (ctxInitialOrgUnitId && Number(ctxInitialOrgUnitId) > 0 && !orgUnitId) {
+      setOrgUnitId(Number(ctxInitialOrgUnitId));
+      setOrgUnitInput(String(ctxInitialOrgUnitId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxInitialOrgUnitId]);
 
   const [outcomesMap, setOutcomesMap] = useState({});
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
@@ -5392,6 +5423,8 @@ const contentKpis = useMemo(() => {
         setOrgUnitId={setOrgUnitId}
         handleOpenCoursePanel={handleOpenCoursePanel}
         authUser={authUser}
+        isDualRole={isDualRole}
+        onGoHome={() => navigate("/")}
       />
 
       {/* ── Main content ── */}
