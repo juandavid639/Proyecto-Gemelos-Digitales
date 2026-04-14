@@ -264,13 +264,13 @@ export default function CoordinatorDashboard() {
         ]} />
 
         <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
-          Vista de coordinación
+          Gemelo Digital
         </div>
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.03em", marginBottom: 4 }}>
           Panel Coordinador
         </h1>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, fontWeight: 500 }}>
-          Vista agregada de {courses.length} curso{courses.length !== 1 ? "s" : ""} · {totals.coursesLoaded} cargado{totals.coursesLoaded !== 1 ? "s" : ""}
+          {courses.length} curso{courses.length !== 1 ? "s" : ""} · {totals.coursesLoaded} cargado{totals.coursesLoaded !== 1 ? "s" : ""}
         </div>
 
         {/* KPI totals (reflects current filters) */}

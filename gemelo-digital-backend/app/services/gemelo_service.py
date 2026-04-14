@@ -608,7 +608,19 @@ class GemeloService:
         if not callable(fn):
             raise RuntimeError("brightspace_client no expone list_classlist")
 
-        data = await fn(orgUnitId)
+        # Graceful: if classlist is unavailable (403/401/404), return empty
+        try:
+            data = await fn(orgUnitId)
+        except Exception as e:
+            msg = str(e)
+            if "403" in msg or "401" in msg or "404" in msg:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "list_course_students: classlist unavailable for course %s (%s)",
+                    orgUnitId, msg[:120],
+                )
+                return {"count": 0, "items": [], "roleCounts": {}}
+            raise
         items = _as_items_list(data)
 
         students: List[Dict[str, Any]] = []
@@ -855,15 +867,30 @@ class GemeloService:
             }
 
         # Semáforo: build_gemelo hace ~10 requests HTTP por estudiante.
-        # Con Semaphore(5) → ~6 lotes en paralelo, sin saturar Brightspace.
-        _overview_sem = asyncio.Semaphore(5)
+        # Con Semaphore(10) → mayor paralelismo para evitar 504 Gateway Timeout.
+        # Hard timeout de 50s (ALB timeout es 60s por defecto).
+        _overview_sem = asyncio.Semaphore(10)
 
         async def _build_gemelo_limited(uid: int):
             async with _overview_sem:
                 return await self.build_gemelo(orgUnitId, uid)
 
         tasks = [_build_gemelo_limited(uid) for uid in student_ids]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results: List[Any]
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=50.0,
+            )
+        except asyncio.TimeoutError:
+            # Partial results: cancel unfinished tasks and use what we have
+            import logging
+            logging.getLogger(__name__).warning(
+                "build_course_overview timeout (50s) for course %s with %d students — returning partial",
+                orgUnitId, len(student_ids),
+            )
+            results = [Exception("timeout") for _ in student_ids]
+            # Don't raise — proceed with empty-ish aggregation
 
         risk_dist = {"alto": 0, "medio": 0, "bajo": 0, "pending": 0}
         perf_vals: List[float] = []

@@ -3471,6 +3471,7 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
   const NAV = [
     { id: "dashboard",  icon: "📊", label: "Dashboard" },
     { id: "routes",     icon: "🛤️", label: "Rutas de atención" },
+    { id: "predictions", icon: "🔮", label: "Predicción de notas" },
     { id: "assistant",  icon: "🤖", label: "Asistente IA" },
   ];
   const NAV_BOTTOM = [
@@ -5708,6 +5709,31 @@ const contentKpis = useMemo(() => {
           </div>
         )}
 
+        {/* ── Predictions tab ── */}
+        {activeTab === "predictions" && (
+          <div className="fade-up tab-enter">
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+                Gemelo Digital · Predicciones
+              </div>
+              <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>
+                Predicción de notas finales
+              </h1>
+              <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+                {courseInfo?.Name || `Curso ${orgUnitId}`}
+              </div>
+            </div>
+            <Card>
+              <GradePredictions
+                studentRows={studentRows}
+                onStudentClick={selectStudentById}
+                courseInfo={courseInfo}
+                variant="full"
+              />
+            </Card>
+          </div>
+        )}
+
         {/* ── Assistant tab ── */}
         {activeTab === "assistant" && (
           <div className="fade-up tab-enter">
@@ -5757,37 +5783,33 @@ const contentKpis = useMemo(() => {
           <AlertsPanel alerts={overview?.alerts} />
         </div>
 
-        {/* ── Resumen semanal IA + Predicciones (arriba, debajo del radar docente) ── */}
+        {/* ── Alertas inteligentes (segunda sección de radar) ── */}
+        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
+          <SmartAlerts
+            studentRows={studentRows}
+            overview={overview}
+            courseInfo={courseInfo}
+            contentKpis={contentKpis}
+            onStudentClick={selectStudentById}
+          />
+        </div>
+
+        {/* ── Resumen semanal IA (narrativa) ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
           <ContextualTip
-            id="batch4_intro_v2"
+            id="batch4_intro_v3"
             title="✨ Nuevas funciones disponibles"
-            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales, alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales (menú lateral), alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
           />
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(360px, 1.4fr) minmax(280px, 1fr)",
-            gap: 16,
-          }}>
-            {/* AI narrative summary */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-              <AINarrativeSummary
-                studentRows={studentRows}
-                overview={overview}
-                courseInfo={courseInfo}
-                raDashboard={raDashboard}
-                contentKpis={contentKpis}
-              />
-            </Card>
-
-            {/* Grade predictions */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔮 Predicción de notas finales <InfoTooltip text="Proyección basada en la trayectoria actual de cada estudiante. No es ML, es una proyección determinística: si mantiene su desempeño en la cobertura restante, ¿qué nota obtendrá?" /></span>}>
-              <GradePredictions
-                studentRows={studentRows}
-                onStudentClick={selectStudentById}
-              />
-            </Card>
-          </div>
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
+            <AINarrativeSummary
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              raDashboard={raDashboard}
+              contentKpis={contentKpis}
+            />
+          </Card>
         </div>
 
         <div
@@ -6281,27 +6303,11 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Analytics section: Smart Alerts + Trends + Calendar + Comparison ── */}
+        {/* ── Analytics section: Trends ── */}
         <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1.3fr) minmax(280px, 1fr)",
-            gap: 16,
-          }}>
-            {/* Smart alerts */}
-            <SmartAlerts
-              studentRows={studentRows}
-              overview={overview}
-              courseInfo={courseInfo}
-              contentKpis={contentKpis}
-              onStudentClick={selectStudentById}
-            />
-
-            {/* Tendencias del curso */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
-              <CourseTrends snapshots={courseSnapshots} />
-            </Card>
-          </div>
+          <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
+            <CourseTrends snapshots={courseSnapshots} />
+          </Card>
         </div>
 
         <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
