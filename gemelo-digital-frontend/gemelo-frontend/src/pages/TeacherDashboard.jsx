@@ -5298,6 +5298,13 @@ const contentKpis = useMemo(() => {
     (covTotal > 0 ? `${covGraded}/${covTotal}` : null);
   const covMissing = covTotal > 0 ? Math.max(0, covTotal - covGraded) : 0;
 
+  // Private teacher notes per student (localStorage)
+  const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
+  // Student interaction log (chat-style timeline per student)
+  const studentChatHook = useStudentChat(orgUnitId, selectedStudent?.userId);
+  const [chatInputType, setChatInputType] = useState("note");
+  const [chatInputText, setChatInputText] = useState("");
+
   const drawerTabs = [
     { id: "resumen", label: "Resumen", icon: "📊" },
     { id: "evidencias", label: "Evidencias", icon: "📋", count: drawerEvidences.length || undefined },
@@ -5311,13 +5318,6 @@ const contentKpis = useMemo(() => {
       ? [{ id: "calidad", label: "Calidad", icon: "🔍" }]
       : []),
   ];
-
-  // Private teacher notes per student (localStorage)
-  const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
-  // Student interaction log (chat-style timeline per student)
-  const studentChatHook = useStudentChat(orgUnitId, selectedStudent?.userId);
-  const [chatInputType, setChatInputType] = useState("note");
-  const [chatInputText, setChatInputText] = useState("");
 
   // Daily snapshots for trend charts (localStorage persisted)
   const snapshotMetrics = useMemo(() => ({
