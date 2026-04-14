@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
   LineChart,
@@ -22,6 +23,19 @@ import {
 } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
 import useMediaQuery from "../hooks/useMediaQuery";
+
+/* ── Helpers ── */
+
+function formatDueDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
 
 /* ── Inline micro-components (keep portal self-contained) ── */
 
@@ -98,9 +112,13 @@ function ProgressBar({ value, color, animate = true }) {
 export default function StudentPortal() {
   useEffect(() => { injectStyles(); }, []);
 
-  const { authUser, logout, initialOrgUnitId } = useAuth();
+  const { authUser, logout, initialOrgUnitId, isDualRole } = useAuth();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 640px)");
   const [darkMode, setDarkMode] = useState(false);
+  const [showCoursePanel, setShowCoursePanel] = useState(false);
+  const [studentCourses, setStudentCourses] = useState([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -113,6 +131,48 @@ export default function StudentPortal() {
     if (saved && Number(saved) > 0) return Number(saved);
     return 0;
   });
+
+  // Load the list of student courses once
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoadingCourses(true);
+      try {
+        const data = await apiGet("/brightspace/courses/enrolled?active_only=false&limit=200");
+        if (!alive) return;
+        const STUDENT_ROLES = ["estudiante ef", "student", "estudiante"];
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const myStudentCourses = items.filter(c => {
+          const rn = String(c.roleName || "").toLowerCase().trim();
+          return STUDENT_ROLES.some(sr => rn.includes(sr));
+        });
+        myStudentCourses.sort((a, b) => {
+          if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+          return String(a.name || "").localeCompare(String(b.name || ""), "es", { sensitivity: "base" });
+        });
+        setStudentCourses(myStudentCourses);
+      } catch {
+        // silent
+      } finally {
+        if (alive) setLoadingCourses(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const handleSelectCourse = (courseId) => {
+    setShowCoursePanel(false);
+    sessionStorage.setItem("gemelo_pending_org", String(courseId));
+    setOrgUnitId(Number(courseId));
+  };
+
+  const handleGoHome = () => {
+    if (isDualRole) {
+      navigate("/");
+    } else {
+      setShowCoursePanel(true);
+    }
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -181,6 +241,28 @@ export default function StudentPortal() {
   const evidences = Array.isArray(studentData?.gradebook?.evidences)
     ? studentData.gradebook.evidences
     : [];
+
+  // Separate evidences by category for cleaner display
+  const corteItems = useMemo(
+    () => evidences.filter((e) => e?.isCorte === true),
+    [evidences]
+  );
+  const nonCorteItems = useMemo(
+    () => evidences.filter((e) => e?.isCorte !== true),
+    [evidences]
+  );
+  const overdueItems = useMemo(
+    () => nonCorteItems.filter((e) => e?.status === "overdue_unscored" || (e?.isOverdue && e?.scorePct == null)),
+    [nonCorteItems]
+  );
+  const pendingItems = useMemo(
+    () => nonCorteItems.filter((e) => e?.scorePct == null && e?.status !== "overdue_unscored" && !e?.isOverdue),
+    [nonCorteItems]
+  );
+  const gradedItems = useMemo(
+    () => nonCorteItems.filter((e) => e?.scorePct != null),
+    [nonCorteItems]
+  );
   const prescription = Array.isArray(studentData?.prescription)
     ? studentData.prescription
     : [];
@@ -216,10 +298,11 @@ export default function StudentPortal() {
   }, [learningOutcomesPayload]);
 
   const chartData = useMemo(() => {
-    return evidences
+    // Chart only shows individual graded evidences (not Corte summaries)
+    return nonCorteItems
       .filter((e) => e.scorePct != null)
       .map((e) => ({ name: (e.name || "").slice(0, 20), pct: Number(e.scorePct ?? 0) }));
-  }, [evidences]);
+  }, [nonCorteItems]);
 
   const pendingUngradedPct = Number(summary?.pendingUngradedWeightPct ?? 0);
   const overdueUnscoredPct = Number(summary?.overdueUnscoredWeightPct ?? 0);
@@ -296,7 +379,26 @@ export default function StudentPortal() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setDarkMode((v) => !v)} style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 15 }}>
+          {(studentCourses.length > 1 || isDualRole) && (
+            <button
+              onClick={handleGoHome}
+              title={isDualRole ? "Volver al inicio" : "Mis cursos"}
+              aria-label={isDualRole ? "Volver al inicio" : "Ver mis cursos"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                borderRadius: 10, border: "1px solid var(--border)",
+                background: "var(--brand)", color: "#fff", cursor: "pointer",
+              }}
+            >
+              📚 {isMobile ? "" : (isDualRole ? "Inicio" : "Mis cursos")}
+            </button>
+          )}
+          <button
+            onClick={() => setDarkMode((v) => !v)}
+            aria-label="Cambiar tema"
+            style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 15 }}
+          >
             {darkMode ? "☀️" : "🌙"}
           </button>
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--brand)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800 }}>
@@ -305,11 +407,94 @@ export default function StudentPortal() {
           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {userName.split(" ").slice(0, 2).join(" ")}
           </span>
-          <button onClick={logout} title="Cerrar sesión" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}>
+          <button onClick={logout} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}>
             Salir
           </button>
         </div>
       </header>
+
+      {/* ── Course Panel Overlay ── */}
+      {showCoursePanel && (
+        <div
+          onClick={() => setShowCoursePanel(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "rgba(13,17,23,0.5)", backdropFilter: "blur(3px)",
+            display: "flex", alignItems: "flex-start", justifyContent: "flex-end",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: "min(480px, 100vw)", height: "100vh",
+              background: "var(--card)", borderLeft: "1px solid var(--border)",
+              display: "flex", flexDirection: "column",
+              boxShadow: "-8px 0 40px rgba(0,0,0,0.15)",
+            }}
+          >
+            <div style={{
+              padding: "16px 20px", borderBottom: "1px solid var(--border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>Mis cursos</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  {studentCourses.length} curso{studentCourses.length !== 1 ? "s" : ""} como estudiante
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCoursePanel(false)}
+                aria-label="Cerrar panel"
+                style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+              {loadingCourses ? (
+                <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  Cargando cursos...
+                </div>
+              ) : studentCourses.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  Sin cursos encontrados.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {studentCourses.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => handleSelectCourse(c.id)}
+                      aria-label={`Seleccionar curso ${c.name}`}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "12px 14px", borderRadius: 10,
+                        border: `1.5px solid ${c.id === orgUnitId ? "var(--ok)" : "var(--border)"}`,
+                        background: c.id === orgUnitId ? "var(--ok-bg)" : "var(--bg)",
+                        cursor: "pointer", textAlign: "left", width: "100%",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {c.name}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>ID {c.id}{c.code ? ` · ${c.code}` : ""}</span>
+                          {!c.isActive && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase" }}>Inactivo</span>}
+                        </div>
+                      </div>
+                      <span style={{ color: c.id === orgUnitId ? "var(--ok)" : "var(--muted)", fontSize: 16, flexShrink: 0 }}>
+                        {c.id === orgUnitId ? "✓" : "→"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Content ── */}
       <main style={{ padding: isMobile ? "16px 14px" : "24px 28px", maxWidth: 900, margin: "0 auto" }}>
@@ -433,10 +618,136 @@ export default function StudentPortal() {
           </div>
         )}
 
-        {/* ── Historial de Evidencias ── */}
-        {evidences.length > 0 && (
+        {/* ── Cortes / Resúmenes (no cuentan en promedio, solo display) ── */}
+        {corteItems.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <Card title={`Mis Evidencias (${evidences.filter(e => e.scorePct != null).length} calificadas)`} accent="brand">
+            <Card title="Resumen por Cortes" accent="brand">
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
+                📊 Estos son los <strong>ponderados acumulados</strong> por corte. Son resumen de tus notas previas — se muestran para tu referencia pero no cuentan dos veces en el promedio.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${Math.min(3, corteItems.length)}, 1fr)`, gap: 12 }}>
+                {corteItems
+                  .slice()
+                  .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
+                  .map((e, i) => {
+                    const gradeColor = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
+                    const isGraded = e.scorePct != null;
+                    return (
+                      <div key={`corte-${i}`} style={{
+                        padding: "18px 16px",
+                        borderRadius: 16,
+                        border: `2px solid ${isGraded ? gradeColor : "var(--border)"}`,
+                        background: isGraded ? `${gradeColor}0D` : "var(--bg)",
+                        display: "flex", flexDirection: "column", gap: 8,
+                        position: "relative", overflow: "hidden",
+                      }}>
+                        <div style={{ position: "absolute", top: 10, right: 12, fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          Resumen
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                          Corte {e.cortePeriod || (i + 1)}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>
+                          {e.name || `Corte ${i + 1}`}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
+                          <span style={{ fontSize: 32, fontWeight: 900, fontFamily: "var(--font-mono)", color: gradeColor, lineHeight: 1 }}>
+                            {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
+                          </span>
+                          <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>/10</span>
+                        </div>
+                        {!isGraded && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>Aún sin publicar</div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── Entregas Vencidas (resaltadas) ── */}
+        {overdueItems.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <Card title={`⚠️ Entregas Vencidas (${overdueItems.length})`} accent="critical">
+              <div style={{ fontSize: 12, color: "var(--critical)", fontWeight: 700, marginBottom: 12, padding: "8px 12px", background: "var(--critical-bg)", borderRadius: 8, border: "1px solid var(--critical-border)" }}>
+                Estas evidencias ya pasaron su fecha de entrega y no han sido calificadas. Contacta a tu docente lo antes posible.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {overdueItems.map((e, i) => (
+                  <div key={`overdue-${i}`} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 14px", borderRadius: 10,
+                    border: "1px solid var(--critical-border)",
+                    background: "var(--critical-bg)",
+                    gap: 10,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {e.name || `Ítem ${e.gradeObjectId}`}
+                      </div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 11, color: "var(--critical)", fontWeight: 700 }}>
+                          🗓 Venció: {formatDueDate(e.dueDate)}
+                        </span>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                          Peso: {fmtPct(e.weightPct)}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="badge" style={{ background: "var(--critical)", color: "#fff", border: "none", padding: "4px 10px", fontSize: 10, fontWeight: 800 }}>
+                      VENCIDA
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── Entregas Pendientes (no vencidas) ── */}
+        {pendingItems.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <Card title={`⏳ Entregas Pendientes (${pendingItems.length})`}>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+                Evidencias que aún puedes entregar. Revisa las fechas de vencimiento.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {pendingItems.map((e, i) => (
+                  <div key={`pending-${i}`} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "10px 12px", borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    gap: 10,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {e.name || `Ítem ${e.gradeObjectId}`}
+                      </div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        {e.dueDate && (
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                            🗓 Entrega: {formatDueDate(e.dueDate)}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                          Peso: {fmtPct(e.weightPct)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── Historial de Evidencias Calificadas ── */}
+        {gradedItems.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <Card title={`Mis Evidencias Calificadas (${gradedItems.length})`} accent="brand">
               {/* Chart */}
               {chartData.length > 1 && (
                 <div style={{ width: "100%", height: 180, marginBottom: 16 }}>
@@ -466,7 +777,7 @@ export default function StudentPortal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {evidences.map((e, i) => (
+                    {gradedItems.map((e, i) => (
                       <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                           {e.name || `Ítem ${e.gradeObjectId}`}

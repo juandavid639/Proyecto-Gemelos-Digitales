@@ -6485,44 +6485,125 @@ const contentKpis = useMemo(() => {
 
             {drawerTab === "evidencias" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {drawerEvidences.length > 0 ? (
-                  <>
-                    <EvidencesTimeline evidences={drawerEvidences} thresholds={thresholds} />
-                    <Card title="Detalle de evidencias">
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                          <thead>
-                            <tr style={{ borderBottom: "2px solid var(--border)" }}>
-                              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>Evidencia</th>
-                              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Peso</th>
-                              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Nota</th>
-                              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "center" }}>Estado</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {drawerEvidences.map((e, i) => (
-                              <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                                <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
-                                  {e.name || `Ítem ${e.gradeObjectId}`}
-                                </td>
-                                <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
-                                  {fmtPct(e.weightPct)}
-                                </td>
-                                <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 900, color: colorForPct(e.scorePct, thresholds) }}>
-                                  {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
-                                </td>
-                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                                  <StatusBadge status={e.status || "pending"} />
-                                </td>
-                              </tr>
+                {drawerEvidences.length > 0 ? (() => {
+                  const drawerCorte = drawerEvidences.filter(e => e?.isCorte === true);
+                  const drawerNonCorte = drawerEvidences.filter(e => e?.isCorte !== true);
+                  const drawerOverdue = drawerNonCorte.filter(e => e?.status === "overdue_unscored" || (e?.isOverdue && e?.scorePct == null));
+                  const fmtDue = (iso) => {
+                    if (!iso) return "—";
+                    try { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-CO", { year: "numeric", month: "short", day: "2-digit" }); } catch { return "—"; }
+                  };
+                  return (
+                    <>
+                      {/* Cortes / resúmenes (no cuentan en el promedio) */}
+                      {drawerCorte.length > 0 && (
+                        <Card title="Resumen por Cortes" right={<span className="tag">No suman</span>} accent="brand">
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
+                            📊 Estos son ponderados acumulados que Brightspace calcula. Se muestran como referencia pero <strong>no cuentan</strong> en el promedio del estudiante (evita doble conteo).
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(3, drawerCorte.length)}, 1fr)`, gap: 10 }}>
+                            {drawerCorte
+                              .slice()
+                              .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
+                              .map((e, i) => {
+                                const gradeColor = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
+                                const isGraded = e.scorePct != null;
+                                return (
+                                  <div key={`corte-${i}`} style={{
+                                    padding: "14px 14px", borderRadius: 14,
+                                    border: `2px solid ${isGraded ? gradeColor : "var(--border)"}`,
+                                    background: isGraded ? `${gradeColor}0D` : "var(--bg)",
+                                    position: "relative",
+                                  }}>
+                                    <div style={{ position: "absolute", top: 8, right: 10, fontSize: 8, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Resumen</div>
+                                    <div style={{ fontSize: 9, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                                      Corte {e.cortePeriod || (i + 1)}
+                                    </div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", lineHeight: 1.3, marginTop: 3 }}>
+                                      {e.name || `Corte ${i + 1}`}
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 6 }}>
+                                      <span style={{ fontSize: 26, fontWeight: 900, fontFamily: "var(--font-mono)", color: gradeColor, lineHeight: 1 }}>
+                                        {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
+                                      </span>
+                                      <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>/10</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </Card>
+                      )}
+
+                      {/* Vencidas */}
+                      {drawerOverdue.length > 0 && (
+                        <Card title={`⚠️ Entregas Vencidas (${drawerOverdue.length})`} accent="critical">
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {drawerOverdue.map((e, i) => (
+                              <div key={`d-overdue-${i}`} style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                padding: "10px 12px", borderRadius: 10,
+                                border: "1px solid var(--critical-border)",
+                                background: "var(--critical-bg)", gap: 10,
+                              }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>
+                                    {e.name || `Ítem ${e.gradeObjectId}`}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 11, color: "var(--critical)", fontWeight: 700 }}>🗓 Venció: {fmtDue(e.dueDate)}</span>
+                                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Peso: {fmtPct(e.weightPct)}</span>
+                                  </div>
+                                </div>
+                                <span className="badge" style={{ background: "var(--critical)", color: "#fff", border: "none", padding: "4px 10px", fontSize: 10, fontWeight: 800 }}>VENCIDA</span>
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  <NoRaMappingNotice evidences={drawerEvidences} units={drawerUnits} />
-                  </>
-                ) : (
+                          </div>
+                        </Card>
+                      )}
+
+                      <EvidencesTimeline evidences={drawerNonCorte} thresholds={thresholds} />
+                      <Card title="Detalle de evidencias">
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "left" }}>Evidencia</th>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Peso</th>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "right" }}>Nota</th>
+                                <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", textAlign: "center" }}>Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {drawerNonCorte.map((e, i) => (
+                                <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                                  <td style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                                    {e.name || `Ítem ${e.gradeObjectId}`}
+                                    {e.dueDate && (
+                                      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+                                        🗓 {fmtDue(e.dueDate)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                                    {fmtPct(e.weightPct)}
+                                  </td>
+                                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 900, color: colorForPct(e.scorePct, thresholds) }}>
+                                    {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
+                                  </td>
+                                  <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                    <StatusBadge status={e.status || "pending"} />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                      <NoRaMappingNotice evidences={drawerNonCorte} units={drawerUnits} />
+                    </>
+                  );
+                })() : (
                   <div className="empty-state">
                     <span className="empty-state-icon">📭</span>
                     <span>Sin evidencias calificadas disponibles</span>

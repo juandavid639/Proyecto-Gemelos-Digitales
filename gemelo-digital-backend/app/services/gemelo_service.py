@@ -50,6 +50,83 @@ def _strip_html(text: Any) -> str:
     return s
 
 
+# Regex to detect "Corte" / summary columns that aggregate other grades.
+# These must be displayed but NOT counted in weighted averages.
+# Matches: "Corte 1", "C1", "Cohorte 1", "1 Corte", "Primer Corte",
+#          "Corte N°1", "Corte Nº 1", "Corte I/II/III"
+_CORTE_REGEX = re.compile(
+    r"(?:^|\s|_|-)"                                   # word boundary-ish
+    r"(?:"
+    r"c(?:ohor?te|orte)?\s*(?:n[°º]?\s*)?([123]|i{1,3})"   # "Corte 1/2/3", "C1", "Cohorte 1", "Corte I/II/III"
+    r"|"
+    r"(primer|segund[oa]|tercer)\s+(?:cohor?te|corte)"     # "Primer/Segundo/Tercer Corte"
+    r"|"
+    r"([123])(?:er|do|ro)?\s+(?:cohor?te|corte)"          # "1er Corte", "2do Corte", "3 Corte"
+    r")"
+    r"(?:\s|$|:|_|-)",
+    re.IGNORECASE,
+)
+
+
+def _is_corte_item(name: Any) -> bool:
+    """Detect if a grade item name matches a 'Corte' / summary pattern.
+    These are aggregated totals that should be shown but not counted in
+    weighted averages (they'd double-count).
+    Examples that match:
+      - "Corte 1", "Corte 2", "Corte 3"
+      - "C1", "C2", "C3"
+      - "Cohorte 1", "Cohorte 2"
+      - "1 Corte", "2 Corte", "3 Corte", "1er Corte", "2do Corte"
+      - "Primer Corte", "Segundo Corte", "Tercer Corte"
+      - "Corte I", "Corte II", "Corte III"
+    """
+    s = _strip_html(name)
+    if not s:
+        return False
+    return bool(_CORTE_REGEX.search(s))
+
+
+def _extract_corte_period(name: Any) -> Optional[int]:
+    """Extract the numeric period (1, 2, 3) from a Corte item name.
+    Returns None if not a Corte item."""
+    s = _strip_html(name)
+    if not s:
+        return None
+    m = _CORTE_REGEX.search(s)
+    if not m:
+        return None
+    # Group 1: numeric or roman (1, 2, 3, I, II, III)
+    # Group 2: spanish ordinal word (primer, segundo, tercero)
+    # Group 3: digit prefix (1er, 2do, etc.)
+    g1, g2, g3 = m.group(1), m.group(2), m.group(3)
+    if g1:
+        g1 = g1.lower()
+        if g1 == "i":
+            return 1
+        if g1 == "ii":
+            return 2
+        if g1 == "iii":
+            return 3
+        try:
+            return int(g1)
+        except Exception:
+            return None
+    if g2:
+        g2 = g2.lower()
+        if g2.startswith("primer"):
+            return 1
+        if g2.startswith("segund"):
+            return 2
+        if g2.startswith("tercer"):
+            return 3
+    if g3:
+        try:
+            return int(g3)
+        except Exception:
+            return None
+    return None
+
+
 def _looks_like_not_submitted(comment_html: Any) -> bool:
     txt = _strip_html(comment_html).lower()
     if not txt:
@@ -1557,9 +1634,14 @@ class GemeloService:
                 it = row["item"]
                 val = row["value"] or {}
 
+                item_name = it.get("Name")
                 w = float(it.get("Weight", 0) or 0.0)
-                total_weight += w
-                total_items_count += 1
+
+                # Detect "Corte" / summary items: these are aggregated running totals
+                # (Corte 1/2/3, C1, Cohorte, etc.). We DISPLAY them but DO NOT count
+                # them in weighted averages — they'd double-count the component grades.
+                is_corte = _is_corte_item(item_name)
+                corte_period = _extract_corte_period(item_name) if is_corte else None
 
                 points_num = val.get("PointsNumerator")
                 points_den = val.get("PointsDenominator")
@@ -1579,44 +1661,56 @@ class GemeloService:
                         score_pct = round((float(points_num) / float(points_den)) * 100.0, 2)
                     except Exception:
                         score_pct = None
-
-                    graded_items_count += 1
-                    graded_weight += w
                     evidence_status = "graded"
                 else:
                     if is_overdue:
-                        overdue_unscored_count += 1
-                        overdue_unscored_weight += w
                         evidence_status = "overdue_unscored"
                     else:
-                        pending_ungraded_count += 1
-                        pending_ungraded_weight += w
                         evidence_status = "pending"
 
-                if has_grade and weighted_num is not None and weighted_den is not None:
-                    if _num(weighted_den, 0.0) > 0:
-                        graded.append((float(weighted_num), float(weighted_den)))
+                # Only non-Corte items contribute to aggregate counts/weights
+                if not is_corte:
+                    total_weight += w
+                    total_items_count += 1
+
+                    if has_grade:
+                        graded_items_count += 1
+                        graded_weight += w
+                    else:
+                        if is_overdue:
+                            overdue_unscored_count += 1
+                            overdue_unscored_weight += w
+                        else:
+                            pending_ungraded_count += 1
+                            pending_ungraded_weight += w
+
+                    if has_grade and weighted_num is not None and weighted_den is not None:
+                        if _num(weighted_den, 0.0) > 0:
+                            graded.append((float(weighted_num), float(weighted_den)))
 
                 if include_evidences:
                     evidences.append(
                         {
                             "gradeObjectId": int(it.get("Id")),
-                            "name": it.get("Name"),
+                            "name": item_name,
                             "weightPct": w,
                             "scorePct": score_pct,
                             "status": evidence_status,
                             "isGraded": has_grade,
                             "isOverdue": is_overdue,
+                            "isCorte": is_corte,
+                            "cortePeriod": corte_period,
                             "dueDate": due_dt.isoformat() if due_dt else None,
                             "lastModified": val.get("LastModified"),
                         }
                     )
 
-                    if not has_grade:
+                    # Don't mark Corte items as pending items
+                    if not has_grade and not is_corte:
                         pending_items.append(
                             {
                                 "gradeObjectId": int(it.get("Id")),
-                                "name": it.get("Name"),
+                                "name": item_name,
                                 "weightPct": w,
                                 "status": evidence_status,
                                 "isOverdue": is_overdue,
@@ -1633,12 +1727,14 @@ class GemeloService:
                 else None
             )
 
-            # Fallback si no hay ponderados
+            # Fallback si no hay ponderados (también excluye Corte)
             if current_perf_pct is None:
                 acc: List[Tuple[float, float]] = []
                 for row in values:
                     it = row["item"]
                     val = row["value"] or {}
+                    if _is_corte_item(it.get("Name")):
+                        continue
                     w = float(it.get("Weight", 0) or 0.0)
                     pn = val.get("PointsNumerator")
                     pd = val.get("PointsDenominator")
@@ -1695,7 +1791,10 @@ class GemeloService:
             return out
 
         try:
-            gradebook_block = await _compute_gradebook(include_evidences=is_teacher) or {}
+            # Include evidences for BOTH teachers and students.
+            # Students need to see their own evidences (graded, pending, overdue)
+            # in the portal view.
+            gradebook_block = await _compute_gradebook(include_evidences=True) or {}
         except Exception as e:
             qc_flags.append({"type": "gradebook_compute_failed", "message": str(e)})
             gradebook_block = {}
