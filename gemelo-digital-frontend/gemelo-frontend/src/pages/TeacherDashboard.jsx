@@ -4178,6 +4178,34 @@ export default function TeacherDashboard() {
     setRefreshKey((k) => k + 1);
   }, []);
 
+  // switchCourse: hard reset all course-specific state BEFORE changing orgUnitId.
+  // This prevents sticky error states when switching between courses after
+  // a 403 / access denied error.
+  const switchCourse = React.useCallback((newId) => {
+    const n = Number(newId);
+    if (!(n > 0)) return;
+    // Clear all course state explicitly (don't rely on useEffect)
+    setErr("");
+    setOverview(null);
+    setStudentsList(null);
+    setStudentRows([]);
+    setRaDashboard(null);
+    setLearningOutcomesPayload(null);
+    setOutcomesMap({});
+    setStudentDetail(null);
+    setSelectedStudent(null);
+    setStudentErr("");
+    setStudentLoading(false);
+    setCourseInfo(null);
+    setContentRoot([]);
+    setLoading(true);
+    // Now set the new course — useEffect will fetch fresh data
+    setOrgUnitId(n);
+    setOrgUnitInput(String(n));
+    // Close any open course panel
+    setShowCoursePanel(false);
+  }, []);
+
   // Compact mode
   const { compact, toggleCompact } = useCompactMode();
 
@@ -4322,12 +4350,7 @@ export default function TeacherDashboard() {
   }, [authUser, orgUnitId]);
 
   const handleSelectCourse = (id) => {
-    const v = Number(id);
-    if (v > 0) {
-      setOrgUnitId(v);
-      setOrgUnitInput(String(v));
-    }
-    setShowCoursePanel(false);
+    switchCourse(id);
   };
 
   // ── Voice search ───────────────────────────────────────
@@ -5487,7 +5510,7 @@ const contentKpis = useMemo(() => {
                     sessionStorage.setItem("gemelo_pending_org", String(c.id));
                     window.location.href = window.location.origin + "/portal";
                   } else {
-                    setOrgUnitId(Number(c.id)); setOrgUnitInput(String(c.id));
+                    switchCourse(c.id);
                   }
                 }}
                 aria-label={`Abrir curso ${c.name}`}
@@ -5595,7 +5618,15 @@ const contentKpis = useMemo(() => {
           {/* Actions */}
           <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
             <button
-              onClick={() => { setOrgUnitId(0); setOrgUnitInput(""); setErr(""); setOverview(null); }}
+              onClick={() => {
+                setErr("");
+                setOverview(null);
+                setStudentsList(null);
+                setStudentRows([]);
+                setOrgUnitId(0);
+                setOrgUnitInput("");
+                setCourseListLoaded(false);
+              }}
               style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg)", fontSize: 13, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}
             >
               ← Ver mis cursos
@@ -5724,6 +5755,39 @@ const contentKpis = useMemo(() => {
 
         <div className="fade-up fade-up-1" style={{ marginBottom: 12 }}>
           <AlertsPanel alerts={overview?.alerts} />
+        </div>
+
+        {/* ── Resumen semanal IA + Predicciones (arriba, debajo del radar docente) ── */}
+        <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
+          <ContextualTip
+            id="batch4_intro_v2"
+            title="✨ Nuevas funciones disponibles"
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales, alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+          />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(360px, 1.4fr) minmax(280px, 1fr)",
+            gap: 16,
+          }}>
+            {/* AI narrative summary */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </Card>
+
+            {/* Grade predictions */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔮 Predicción de notas finales <InfoTooltip text="Proyección basada en la trayectoria actual de cada estudiante. No es ML, es una proyección determinística: si mantiene su desempeño en la cobertura restante, ¿qué nota obtendrá?" /></span>}>
+              <GradePredictions
+                studentRows={studentRows}
+                onStudentClick={selectStudentById}
+              />
+            </Card>
+          </div>
         </div>
 
         <div
@@ -6217,41 +6281,8 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── AI summary + Predictions row ── */}
-        <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
-          <ContextualTip
-            id="batch4_intro"
-            title="✨ Nuevas funciones disponibles"
-            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales, alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
-          />
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(360px, 1.4fr) minmax(280px, 1fr)",
-            gap: 16,
-          }}>
-            {/* AI narrative summary */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
-              <AINarrativeSummary
-                studentRows={studentRows}
-                overview={overview}
-                courseInfo={courseInfo}
-                raDashboard={raDashboard}
-                contentKpis={contentKpis}
-              />
-            </Card>
-
-            {/* Grade predictions */}
-            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔮 Predicción de notas finales <InfoTooltip text="Proyección basada en la trayectoria actual de cada estudiante. No es ML, es una proyección determinística: si mantiene su desempeño en la cobertura restante, ¿qué nota obtendrá?" /></span>}>
-              <GradePredictions
-                studentRows={studentRows}
-                onStudentClick={selectStudentById}
-              />
-            </Card>
-          </div>
-        </div>
-
         {/* ── Analytics section: Smart Alerts + Trends + Calendar + Comparison ── */}
-        <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+        <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
           <div style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1.3fr) minmax(280px, 1fr)",
@@ -6288,7 +6319,7 @@ const contentKpis = useMemo(() => {
             <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Mis cursos (comparativa) <InfoTooltip text="Compara el curso actual con tus otros cursos activos. Haz clic en otro curso para cambiarte." /></span>}>
               <CoursesComparison
                 currentOrgUnitId={orgUnitId}
-                onSelectCourse={(id) => { setOrgUnitId(Number(id)); setOrgUnitInput(String(id)); }}
+                onSelectCourse={(id) => switchCourse(id)}
               />
             </Card>
           </div>

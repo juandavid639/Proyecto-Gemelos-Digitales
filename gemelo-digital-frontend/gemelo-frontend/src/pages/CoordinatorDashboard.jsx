@@ -24,6 +24,8 @@ export default function CoordinatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("atRiskPct"); // atRiskPct | avgPct | name
+  const [semesterFilter, setSemesterFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   // Load courses the user has access to
   useEffect(() => {
@@ -88,7 +90,10 @@ export default function CoordinatorDashboard() {
   }, [courses]);
 
   // Derived: totals across all courses
+  // totals respects the active filters (semester/category/search)
   const totals = useMemo(() => {
+    // We use sortedCourses (already filtered) to aggregate
+    // but sortedCourses is declared AFTER — defer computation to metrics only
     const metrics = Object.values(courseMetrics).filter((m) => !m.error);
     if (metrics.length === 0) {
       return { totalStudents: 0, atRiskCount: 0, avgGrade: null, avgCoverage: null, coursesLoaded: 0 };
@@ -102,21 +107,126 @@ export default function CoordinatorDashboard() {
     return { totalStudents, atRiskCount, avgGrade, avgCoverage, coursesLoaded: metrics.length };
   }, [courseMetrics]);
 
+  // Helper: extract semester code (YYYYQQ) from course name/code.
+  // Accepts formats like "202510", "202520", "202610", "202620".
+  // Also supports loose matches like "2025-10", "2025.10", "2025 1".
+  const extractSemester = (course) => {
+    const hay = `${course?.name || ""} ${course?.code || ""}`;
+    // Strict match: 6 consecutive digits starting with 20xx
+    const strict = hay.match(/\b(20\d{2})(10|20|30)\b/);
+    if (strict) return `${strict[1]}${strict[2]}`;
+    // Loose: "2025-1", "2025.1", "2025 1" -> 202510
+    const loose = hay.match(/\b(20\d{2})[\s\-._](\d)\b/);
+    if (loose) {
+      const q = loose[2];
+      if (q === "1") return `${loose[1]}10`;
+      if (q === "2") return `${loose[1]}20`;
+      if (q === "3") return `${loose[1]}30`;
+    }
+    return null;
+  };
+
+  // Helper: extract "category" — the non-numeric prefix of the course name.
+  // E.g. "202510 1ER PREGRADO INTELIGENCIA ARTIFICIAL" → "1ER PREGRADO"
+  // E.g. "AULA PLAN DE DESARROLLO" → "AULA"
+  // We take the first 2 significant words after any leading semester code.
+  const extractCategory = (course) => {
+    let name = String(course?.name || "").trim();
+    // Remove leading semester code
+    name = name.replace(/^20\d{2}(?:10|20|30)\s*[-·_]?\s*/i, "");
+    // Take first 2-3 uppercase-ish words
+    const words = name.split(/\s+/).filter(w => w.length > 0 && !/^\d+$/.test(w));
+    if (words.length === 0) return "SIN CATEGORÍA";
+    // Known category patterns — prefer these
+    const upper = name.toUpperCase();
+    if (/PREGRADO/.test(upper)) {
+      const m = upper.match(/(\d+ER\s+PREGRADO|1ER\s+PREGRADO|PREGRADO)/);
+      return m ? m[0].trim() : "PREGRADO";
+    }
+    if (/POSGRADO|MAESTR|DOCTORADO/.test(upper)) return "POSGRADO";
+    if (/AULA/.test(upper)) return "AULA";
+    if (/DESARROLLO/.test(upper)) return "DESARROLLO";
+    if (/DIPLOMADO/.test(upper)) return "DIPLOMADO";
+    if (/EDUCACI/.test(upper)) return "EDUCACIÓN CONTINUA";
+    // Fallback: first word in caps
+    return words[0].toUpperCase();
+  };
+
+  // Compute available semesters and categories (unique, sorted)
+  const { availableSemesters, availableCategories } = useMemo(() => {
+    const sems = new Set();
+    const cats = new Set();
+    for (const c of courses) {
+      const s = extractSemester(c);
+      if (s) sems.add(s);
+      const cat = extractCategory(c);
+      if (cat) cats.add(cat);
+    }
+    return {
+      availableSemesters: Array.from(sems).sort().reverse(), // newest first
+      availableCategories: Array.from(cats).sort(),
+    };
+  }, [courses]);
+
+  // Label for semester code: "202510" → "2025-I", "202520" → "2025-II"
+  const formatSemester = (code) => {
+    if (!code || code.length !== 6) return code;
+    const year = code.slice(0, 4);
+    const q = code.slice(4, 6);
+    const roman = q === "10" ? "I" : q === "20" ? "II" : q === "30" ? "III" : q;
+    return `${year}-${roman}`;
+  };
+
   const sortedCourses = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = courses.filter((c) => {
-      if (!q) return true;
-      return String(c.name || "").toLowerCase().includes(q) || String(c.code || "").toLowerCase().includes(q);
+      // Search filter
+      if (q && !(String(c.name || "").toLowerCase().includes(q) || String(c.code || "").toLowerCase().includes(q))) {
+        return false;
+      }
+      // Semester filter
+      if (semesterFilter !== "all") {
+        const s = extractSemester(c);
+        if (semesterFilter === "_none" && s != null) return false;
+        if (semesterFilter !== "_none" && s !== semesterFilter) return false;
+      }
+      // Category filter
+      if (categoryFilter !== "all") {
+        const cat = extractCategory(c);
+        if (cat !== categoryFilter) return false;
+      }
+      return true;
     });
-    const withMetrics = list.map((c) => ({ ...c, m: courseMetrics[c.id] || {} }));
+    const withMetrics = list.map((c) => ({
+      ...c,
+      m: courseMetrics[c.id] || {},
+      _semester: extractSemester(c),
+      _category: extractCategory(c),
+    }));
     withMetrics.sort((a, b) => {
       if (sortBy === "name") return String(a.name || "").localeCompare(String(b.name || ""), "es");
       if (sortBy === "avgPct") return (b.m.avgPct ?? -1) - (a.m.avgPct ?? -1);
       if (sortBy === "atRiskPct") return (b.m.atRiskPct ?? -1) - (a.m.atRiskPct ?? -1);
+      if (sortBy === "semester") return String(b._semester || "").localeCompare(String(a._semester || ""));
       return 0;
     });
     return withMetrics;
-  }, [courses, courseMetrics, search, sortBy]);
+  }, [courses, courseMetrics, search, sortBy, semesterFilter, categoryFilter]);
+
+  // Totals for the currently-filtered view
+  const filteredTotals = useMemo(() => {
+    const metrics = sortedCourses.map((c) => c.m).filter((m) => m && !m.error);
+    if (metrics.length === 0) {
+      return { totalStudents: 0, atRiskCount: 0, avgGrade: null, avgCoverage: null };
+    }
+    const totalStudents = metrics.reduce((a, m) => a + (m.totalStudents || 0), 0);
+    const atRiskCount = metrics.reduce((a, m) => a + (m.atRiskCount || 0), 0);
+    const withAvg = metrics.filter((m) => m.avgPct != null);
+    const avgGrade = withAvg.length > 0 ? (withAvg.reduce((a, m) => a + m.avgPct, 0) / withAvg.length) : null;
+    const withCov = metrics.filter((m) => m.avgCoverage != null);
+    const avgCoverage = withCov.length > 0 ? (withCov.reduce((a, m) => a + m.avgCoverage, 0) / withCov.length) : null;
+    return { totalStudents, atRiskCount, avgGrade, avgCoverage };
+  }, [sortedCourses]);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font)" }}>
@@ -163,37 +273,42 @@ export default function CoordinatorDashboard() {
           Vista agregada de {courses.length} curso{courses.length !== 1 ? "s" : ""} · {totals.coursesLoaded} cargado{totals.coursesLoaded !== 1 ? "s" : ""}
         </div>
 
-        {/* KPI totals */}
+        {/* KPI totals (reflects current filters) */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
           <div className="kpi-card">
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cursos activos</div>
-            <div style={{ fontSize: 32, fontWeight: 900, color: "var(--text)", marginTop: 4 }}>{courses.length}</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cursos</div>
+            <div style={{ fontSize: 32, fontWeight: 900, color: "var(--text)", marginTop: 4 }}>{sortedCourses.length}</div>
+            {sortedCourses.length !== courses.length && (
+              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+                de {courses.length} totales
+              </div>
+            )}
           </div>
           <div className="kpi-card">
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Estudiantes totales</div>
-            <div style={{ fontSize: 32, fontWeight: 900, color: "var(--text)", marginTop: 4 }}>{totals.totalStudents}</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Estudiantes</div>
+            <div style={{ fontSize: 32, fontWeight: 900, color: "var(--text)", marginTop: 4 }}>{filteredTotals.totalStudents}</div>
           </div>
           <div className="kpi-card">
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Nota promedio global</div>
-            <div style={{ fontSize: 32, fontWeight: 900, color: colorForPct(totals.avgGrade, null), marginTop: 4 }}>
-              {totals.avgGrade != null ? fmtGrade10FromPct(totals.avgGrade) : "—"}
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Nota promedio</div>
+            <div style={{ fontSize: 32, fontWeight: 900, color: colorForPct(filteredTotals.avgGrade, null), marginTop: 4 }}>
+              {filteredTotals.avgGrade != null ? fmtGrade10FromPct(filteredTotals.avgGrade) : "—"}
               <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600 }}>/10</span>
             </div>
           </div>
           <div className="kpi-card">
             <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>En riesgo</div>
             <div style={{ fontSize: 32, fontWeight: 900, color: COLORS.critical, marginTop: 4 }}>
-              {totals.atRiskCount}
+              {filteredTotals.atRiskCount}
               <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600 }}>
-                {totals.totalStudents > 0 && ` · ${((totals.atRiskCount / totals.totalStudents) * 100).toFixed(0)}%`}
+                {filteredTotals.totalStudents > 0 && ` · ${((filteredTotals.atRiskCount / filteredTotals.totalStudents) * 100).toFixed(0)}%`}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Search + sort */}
+        {/* Search + filters + sort */}
         <div className="kpi-card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <input
               type="text"
               value={search}
@@ -207,6 +322,54 @@ export default function CoordinatorDashboard() {
                 fontSize: 12, fontFamily: "var(--font)", outline: "none",
               }}
             />
+
+            {/* Semester filter */}
+            {availableSemesters.length > 0 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
+                Semestre:
+                <select
+                  value={semesterFilter}
+                  onChange={(e) => setSemesterFilter(e.target.value)}
+                  aria-label="Filtrar por semestre"
+                  style={{
+                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                    background: "var(--card)", color: "var(--text)",
+                    fontSize: 12, fontFamily: "var(--font)", outline: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  <option value="all">Todos</option>
+                  {availableSemesters.map((s) => (
+                    <option key={s} value={s}>{formatSemester(s)}</option>
+                  ))}
+                  <option value="_none">Sin semestre</option>
+                </select>
+              </label>
+            )}
+
+            {/* Category filter */}
+            {availableCategories.length > 1 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
+                Categoría:
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  aria-label="Filtrar por categoría"
+                  style={{
+                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                    background: "var(--card)", color: "var(--text)",
+                    fontSize: 12, fontFamily: "var(--font)", outline: "none",
+                    fontWeight: 700, maxWidth: 180,
+                  }}
+                >
+                  <option value="all">Todas</option>
+                  {availableCategories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
@@ -219,9 +382,29 @@ export default function CoordinatorDashboard() {
             >
               <option value="atRiskPct">Mayor riesgo primero</option>
               <option value="avgPct">Mejor nota primero</option>
+              <option value="semester">Semestre reciente primero</option>
               <option value="name">Nombre A-Z</option>
             </select>
+
+            {(semesterFilter !== "all" || categoryFilter !== "all" || search) && (
+              <button
+                className="btn"
+                onClick={() => { setSemesterFilter("all"); setCategoryFilter("all"); setSearch(""); }}
+                style={{ fontSize: 11, padding: "6px 12px" }}
+              >
+                ✕ Limpiar filtros
+              </button>
+            )}
           </div>
+
+          {/* Active filter summary */}
+          {(semesterFilter !== "all" || categoryFilter !== "all") && (
+            <div style={{ padding: "8px 18px", background: "var(--brand-light)", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--brand)", fontWeight: 700 }}>
+              Mostrando {sortedCourses.length} de {courses.length} cursos
+              {semesterFilter !== "all" && <> · Semestre: <strong>{semesterFilter === "_none" ? "Sin semestre" : formatSemester(semesterFilter)}</strong></>}
+              {categoryFilter !== "all" && <> · Categoría: <strong>{categoryFilter}</strong></>}
+            </div>
+          )}
 
           {/* Courses table */}
           <div style={{ overflowX: "auto" }}>
@@ -243,7 +426,7 @@ export default function CoordinatorDashboard() {
                 {!loading && sortedCourses.length === 0 && (
                   <tr><td colSpan={6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Sin cursos encontrados.</td></tr>
                 )}
-                {sortedCourses.map(({ id, name, code, m }) => {
+                {sortedCourses.map(({ id, name, code, m, _semester, _category }) => {
                   const avgColor = m.avgPct != null ? colorForPct(m.avgPct, null) : "var(--muted)";
                   const riskColor = m.atRiskPct == null ? "var(--muted)"
                     : m.atRiskPct > 30 ? COLORS.critical
@@ -261,7 +444,15 @@ export default function CoordinatorDashboard() {
                     >
                       <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
                         <div>{name}</div>
-                        {code && <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{code}</div>}
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 2 }}>
+                          {code && <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{code}</span>}
+                          {_semester && <span className="tag" style={{ fontSize: 9, padding: "1px 6px" }}>{formatSemester(_semester)}</span>}
+                          {_category && _category !== "SIN CATEGORÍA" && (
+                            <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              {_category}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: "10px 14px", textAlign: "right", fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text)", fontWeight: 700 }}>
                         {m.totalStudents != null ? m.totalStudents : "..."}
