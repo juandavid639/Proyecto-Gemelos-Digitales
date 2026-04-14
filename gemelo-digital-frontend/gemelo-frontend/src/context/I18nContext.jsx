@@ -1,0 +1,128 @@
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+
+/**
+ * Lightweight i18n context — no external library.
+ * Supports ES (default) and EN. Users can switch from topbar.
+ * Persisted in localStorage.
+ */
+
+const translations = {
+  es: {
+    // Common
+    "common.loading": "Cargando...",
+    "common.error": "Error",
+    "common.retry": "Reintentar",
+    "common.cancel": "Cancelar",
+    "common.save": "Guardar",
+    "common.close": "Cerrar",
+    "common.search": "Buscar",
+    "common.export": "Exportar",
+    "common.print": "Imprimir",
+    "common.logout": "Cerrar sesión",
+    // Dashboard
+    "dashboard.title": "Gemelo Digital · Vista Docente",
+    "dashboard.students": "Estudiantes",
+    "dashboard.courseManagement": "Gestión del curso",
+    "dashboard.riskAcademic": "Riesgo académico",
+    "dashboard.priorityAcademic": "Prioridad académica",
+    "dashboard.priorityStudents": "Estudiantes prioritarios",
+    "dashboard.gradeDistribution": "Distribución de notas",
+    "dashboard.trends": "Tendencias del curso",
+    "dashboard.smartAlerts": "Alertas inteligentes",
+    "dashboard.dueDateCalendar": "Calendario de entregas",
+    "dashboard.myCourses": "Mis cursos",
+    "dashboard.noCourse": "Selecciona un curso",
+    // Portal
+    "portal.title": "Gemelo Digital · Mi Rendimiento",
+    "portal.greeting": "Hola",
+    "portal.myGrade": "Mi Nota Actual",
+    "portal.coverage": "Cobertura",
+    "portal.myStatus": "Mi Estado",
+    "portal.myRoute": "Mi Ruta de Mejora",
+    "portal.myLearningOutcomes": "Mis Resultados de Aprendizaje",
+    "portal.myEvidences": "Mis Evidencias Calificadas",
+    "portal.overdueDeliveries": "Entregas Vencidas",
+    "portal.pendingDeliveries": "Entregas Pendientes",
+  },
+  en: {
+    "common.loading": "Loading...",
+    "common.error": "Error",
+    "common.retry": "Retry",
+    "common.cancel": "Cancel",
+    "common.save": "Save",
+    "common.close": "Close",
+    "common.search": "Search",
+    "common.export": "Export",
+    "common.print": "Print",
+    "common.logout": "Sign out",
+    "dashboard.title": "Digital Twin · Teacher View",
+    "dashboard.students": "Students",
+    "dashboard.courseManagement": "Course Management",
+    "dashboard.riskAcademic": "Academic Risk",
+    "dashboard.priorityAcademic": "Academic Priority",
+    "dashboard.priorityStudents": "Priority Students",
+    "dashboard.gradeDistribution": "Grade Distribution",
+    "dashboard.trends": "Course Trends",
+    "dashboard.smartAlerts": "Smart Alerts",
+    "dashboard.dueDateCalendar": "Due Date Calendar",
+    "dashboard.myCourses": "My Courses",
+    "dashboard.noCourse": "Select a course",
+    "portal.title": "Digital Twin · My Performance",
+    "portal.greeting": "Hi",
+    "portal.myGrade": "My Current Grade",
+    "portal.coverage": "Coverage",
+    "portal.myStatus": "My Status",
+    "portal.myRoute": "My Improvement Path",
+    "portal.myLearningOutcomes": "My Learning Outcomes",
+    "portal.myEvidences": "My Graded Evidences",
+    "portal.overdueDeliveries": "Overdue Deliveries",
+    "portal.pendingDeliveries": "Pending Deliveries",
+  },
+};
+
+const I18nContext = createContext(null);
+
+export function I18nProvider({ children }) {
+  const [locale, setLocaleState] = useState(() => {
+    if (typeof localStorage === "undefined") return "es";
+    return localStorage.getItem("gemelo_locale") || "es";
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("gemelo_locale", locale); } catch {}
+    if (typeof document !== "undefined") document.documentElement.lang = locale;
+  }, [locale]);
+
+  const t = useCallback((key, fallback) => {
+    const dict = translations[locale] || translations.es;
+    return dict[key] || fallback || key;
+  }, [locale]);
+
+  const setLocale = useCallback((l) => {
+    if (translations[l]) setLocaleState(l);
+  }, []);
+
+  const toggleLocale = useCallback(() => {
+    setLocaleState((l) => (l === "es" ? "en" : "es"));
+  }, []);
+
+  return (
+    <I18nContext.Provider value={{ locale, t, setLocale, toggleLocale }}>
+      {children}
+    </I18nContext.Provider>
+  );
+}
+
+export function useI18n() {
+  const ctx = useContext(I18nContext);
+  if (!ctx) {
+    // Fallback: return a no-op t() so the app still works if provider missing
+    return {
+      locale: "es",
+      t: (k, fb) => fb || k,
+      setLocale: () => {},
+      toggleLocale: () => {},
+    };
+  }
+  return ctx;
+}

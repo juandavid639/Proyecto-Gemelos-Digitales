@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ToastProvider } from "./context/ToastContext";
+import { I18nProvider } from "./context/I18nContext";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import LoginScreen from "./components/auth/LoginScreen";
@@ -12,6 +13,7 @@ import { injectStyles } from "./styles/global";
 const RoleHome = lazy(() => import("./pages/RoleHome"));
 const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
+const CoordinatorDashboard = lazy(() => import("./pages/CoordinatorDashboard"));
 
 // Suspense fallback — lightweight loader
 function PageLoader() {
@@ -53,6 +55,18 @@ function AppRoutes() {
             <ProtectedRoute allowedRoles={["instructor", "admin"]}>
               <ErrorBoundary sectionName="Dashboard Docente">
                 <TeacherDashboard />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Coordinator dashboard (any non-student can access) */}
+        <Route
+          path="/coordinator"
+          element={
+            <ProtectedRoute allowedRoles={["instructor", "admin"]}>
+              <ErrorBoundary sectionName="Panel Coordinador">
+                <CoordinatorDashboard />
               </ErrorBoundary>
             </ProtectedRoute>
           }
@@ -104,15 +118,17 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <ThemeProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <ErrorBoundary sectionName="Gemelo Digital">
-              <AppRoutes />
-            </ErrorBoundary>
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <ErrorBoundary sectionName="Gemelo Digital">
+                <AppRoutes />
+              </ErrorBoundary>
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </BrowserRouter>
   );
 }

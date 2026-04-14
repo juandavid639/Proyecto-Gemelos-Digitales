@@ -17,18 +17,23 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../context/I18nContext";
 import StudentAvatar from "../components/ui/StudentAvatar";
 import Breadcrumb from "../components/ui/Breadcrumb";
 import LastUpdated from "../components/ui/LastUpdated";
 import CommandPalette from "../components/ui/CommandPalette";
+import ContextualTip from "../components/ui/ContextualTip";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
 import CourseTrends from "../components/dashboard/CourseTrends";
 import DueDateCalendar from "../components/dashboard/DueDateCalendar";
 import CoursesComparison from "../components/dashboard/CoursesComparison";
+import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
+import GradePredictions from "../components/dashboard/GradePredictions";
 import useStudentNotes from "../hooks/useStudentNotes";
 import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 import useCourseSnapshots from "../hooks/useCourseSnapshots";
+import useStudentChat from "../hooks/useStudentChat";
 import { exportStudentsCsv, exportCourseReport } from "../utils/export";
 /**
  * =========================
@@ -3529,10 +3534,11 @@ function AppSidebar({ activeTab, setActiveTab, currentCourseName, mobileOpen, on
 function AppTopbar({
   isMobile, onOpenSidebar, darkMode, setDarkMode,
   compact, toggleCompact,
+  locale, toggleLocale,
   orgUnitInput, setOrgUnitInput, setOrgUnitId,
   handleOpenCoursePanel,
   authUser, isDualRole, onGoHome,
-  onOpenPalette,
+  onOpenPalette, onOpenCoordinator,
 }) {
   return (
     <header className="app-topbar">
@@ -3606,6 +3612,25 @@ function AppTopbar({
           📚 {isMobile ? "" : "Mis cursos"}
         </button>
 
+        {onOpenCoordinator && (
+          <button
+            className="topbar-icon-btn"
+            onClick={onOpenCoordinator}
+            title="Vista de coordinación (agregada)"
+            aria-label="Abrir panel de coordinación"
+          >
+            🏛
+          </button>
+        )}
+        <button
+          className="topbar-icon-btn"
+          onClick={toggleLocale}
+          title={locale === "es" ? "Switch to English" : "Cambiar a español"}
+          aria-label="Cambiar idioma"
+          style={{ fontSize: 10, fontWeight: 800 }}
+        >
+          {locale === "es" ? "ES" : "EN"}
+        </button>
         <button
           className="topbar-icon-btn"
           onClick={toggleCompact}
@@ -3966,6 +3991,7 @@ export default function TeacherDashboard() {
   // early (before lazy-loaded TeacherDashboard mounts), so we rely on the
   // context value instead of reading sessionStorage directly here.
   const { initialOrgUnitId: ctxInitialOrgUnitId, isDualRole } = useAuth();
+  const { locale, toggleLocale } = useI18n();
   const navigate = useNavigate();
 
   const isNarrow = useMediaQuery("(max-width: 900px)");
@@ -5277,6 +5303,7 @@ const contentKpis = useMemo(() => {
     { id: "evidencias", label: "Evidencias", icon: "📋", count: drawerEvidences.length || undefined },
     { id: "unidades", label: "Unidades", icon: "🎯", count: drawerUnits.length || undefined },
     { id: "notas", label: "Mis notas", icon: "📝" },
+    { id: "historial", label: "Historial", icon: "💬", count: studentChatHook.entries.length || undefined },
     ...(drawerPrescription.length
       ? [{ id: "prescripcion", label: "Intervención", icon: "💊", count: drawerPrescription.length }]
       : []),
@@ -5287,6 +5314,10 @@ const contentKpis = useMemo(() => {
 
   // Private teacher notes per student (localStorage)
   const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
+  // Student interaction log (chat-style timeline per student)
+  const studentChatHook = useStudentChat(orgUnitId, selectedStudent?.userId);
+  const [chatInputType, setChatInputType] = useState("note");
+  const [chatInputText, setChatInputText] = useState("");
 
   // Daily snapshots for trend charts (localStorage persisted)
   const snapshotMetrics = useMemo(() => ({
@@ -5623,6 +5654,9 @@ const contentKpis = useMemo(() => {
         isDualRole={isDualRole}
         onGoHome={() => navigate("/")}
         onOpenPalette={() => setPaletteOpen(true)}
+        onOpenCoordinator={() => navigate("/coordinator")}
+        locale={locale}
+        toggleLocale={toggleLocale}
       />
 
       {/* ── Main content ── */}
@@ -6183,8 +6217,41 @@ const contentKpis = useMemo(() => {
 
         </div>
 
-        {/* ── Analytics section: Smart Alerts + Trends + Calendar + Comparison ── */}
+        {/* ── AI summary + Predictions row ── */}
         <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
+          <ContextualTip
+            id="batch4_intro"
+            title="✨ Nuevas funciones disponibles"
+            description="Tu dashboard ahora tiene resumen narrativo con IA, predicción de notas finales, alertas inteligentes, tendencias históricas y más. Haz Ctrl+K para la paleta de comandos, o presiona ? para ver todos los atajos."
+          />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(360px, 1.4fr) minmax(280px, 1fr)",
+            gap: 16,
+          }}>
+            {/* AI narrative summary */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🤖 Resumen semanal <InfoTooltip text="Resumen narrativo en lenguaje natural del estado del curso. Se genera automáticamente a partir de los datos actuales. Puedes escucharlo con TTS." /></span>} accent="brand">
+              <AINarrativeSummary
+                studentRows={studentRows}
+                overview={overview}
+                courseInfo={courseInfo}
+                raDashboard={raDashboard}
+                contentKpis={contentKpis}
+              />
+            </Card>
+
+            {/* Grade predictions */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>🔮 Predicción de notas finales <InfoTooltip text="Proyección basada en la trayectoria actual de cada estudiante. No es ML, es una proyección determinística: si mantiene su desempeño en la cobertura restante, ¿qué nota obtendrá?" /></span>}>
+              <GradePredictions
+                studentRows={studentRows}
+                onStudentClick={selectStudentById}
+              />
+            </Card>
+          </div>
+        </div>
+
+        {/* ── Analytics section: Smart Alerts + Trends + Calendar + Comparison ── */}
+        <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
           <div style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1.3fr) minmax(280px, 1fr)",
@@ -7185,6 +7252,115 @@ const contentKpis = useMemo(() => {
                   Flags generados por el motor de calidad del gemelo. Indican posibles inconsistencias en rúbricas, criterios no mapeados, o datos ausentes.
                 </div>
                 <QualityFlagsBlock flags={drawerQcFlags} />
+              </div>
+            )}
+
+            {drawerTab === "historial" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Card title={`Historial de interacciones (${studentChatHook.entries.length})`}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
+                    💬 Registra tus interacciones con este estudiante: reuniones, emails, acciones tomadas. Se guarda localmente en tu navegador.
+                  </div>
+
+                  {/* Entry form */}
+                  <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg)" }}>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                      {[
+                        { id: "meeting", label: "Reunión", icon: "🤝" },
+                        { id: "email", label: "Email", icon: "✉" },
+                        { id: "note", label: "Nota", icon: "📝" },
+                        { id: "action", label: "Acción", icon: "✅" },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          className={`chip ${chatInputType === t.id ? "active" : ""}`}
+                          onClick={() => setChatInputType(t.id)}
+                          style={{ fontSize: 11 }}
+                        >
+                          {t.icon} {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={chatInputText}
+                      onChange={(e) => setChatInputText(e.target.value)}
+                      placeholder={`Describe la ${chatInputType}...`}
+                      aria-label="Describir interacción"
+                      style={{
+                        width: "100%", minHeight: 60, padding: 10,
+                        borderRadius: 8, border: "1px solid var(--border)",
+                        background: "var(--card)", color: "var(--text)",
+                        fontFamily: "var(--font)", fontSize: 13, lineHeight: 1.4,
+                        outline: "none", resize: "vertical",
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          if (chatInputText.trim()) {
+                            studentChatHook.addEntry(chatInputType, chatInputText);
+                            setChatInputText("");
+                          }
+                        }}
+                        disabled={!chatInputText.trim()}
+                        style={{ fontSize: 12, padding: "6px 14px" }}
+                      >
+                        Registrar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Timeline */}
+                  {studentChatHook.entries.length === 0 ? (
+                    <div className="empty-state" style={{ minHeight: 100 }}>
+                      <span className="empty-state-icon">💬</span>
+                      <span>Sin interacciones registradas</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {studentChatHook.entries.map((entry) => {
+                        const typeMeta = {
+                          meeting: { icon: "🤝", color: "var(--brand)", label: "Reunión" },
+                          email: { icon: "✉", color: "var(--watch)", label: "Email" },
+                          note: { icon: "📝", color: "var(--muted)", label: "Nota" },
+                          action: { icon: "✅", color: "var(--ok)", label: "Acción" },
+                        }[entry.type] || { icon: "▸", color: "var(--muted)", label: entry.type };
+                        return (
+                          <div key={entry.id} style={{
+                            display: "flex", gap: 10,
+                            padding: "10px 12px", borderRadius: 10,
+                            border: `1px solid var(--border)`,
+                            background: "var(--card)",
+                            borderLeft: `3px solid ${typeMeta.color}`,
+                          }}>
+                            <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{typeMeta.icon}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                <span style={{ fontSize: 10, fontWeight: 800, color: typeMeta.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                  {typeMeta.label}
+                                </span>
+                                <span style={{ fontSize: 10, color: "var(--muted)" }}>
+                                  {new Date(entry.date).toLocaleString("es-CO", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                                {entry.text}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => studentChatHook.deleteEntry(entry.id)}
+                              aria-label="Eliminar entrada"
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 14, padding: "0 4px", alignSelf: "flex-start" }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
               </div>
             )}
 
