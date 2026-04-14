@@ -21,9 +21,15 @@ import StudentAvatar from "../components/ui/StudentAvatar";
 import Breadcrumb from "../components/ui/Breadcrumb";
 import LastUpdated from "../components/ui/LastUpdated";
 import CommandPalette from "../components/ui/CommandPalette";
+import SmartAlerts from "../components/dashboard/SmartAlerts";
+import CourseTrends from "../components/dashboard/CourseTrends";
+import DueDateCalendar from "../components/dashboard/DueDateCalendar";
+import CoursesComparison from "../components/dashboard/CoursesComparison";
 import useStudentNotes from "../hooks/useStudentNotes";
 import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
+import useCourseSnapshots from "../hooks/useCourseSnapshots";
+import { exportStudentsCsv, exportCourseReport } from "../utils/export";
 /**
  * =========================
  * Config
@@ -5282,6 +5288,21 @@ const contentKpis = useMemo(() => {
   // Private teacher notes per student (localStorage)
   const studentNotesHook = useStudentNotes(orgUnitId, selectedStudent?.userId);
 
+  // Daily snapshots for trend charts (localStorage persisted)
+  const snapshotMetrics = useMemo(() => ({
+    avgPct: overview?.courseGradebook?.avgCurrentPerformancePct ?? null,
+    atRiskPct: atRiskPct,
+    coveragePct: overview?.courseGradebook?.avgCoveragePct ?? null,
+    totalStudents: studentsCount,
+  }), [overview, atRiskPct, studentsCount]);
+  const { snapshots: courseSnapshots } = useCourseSnapshots(orgUnitId, snapshotMetrics);
+
+  // Helper to select a student by userId from SmartAlerts chips
+  const selectStudentById = React.useCallback((uid) => {
+    const s = studentRows.find((r) => r.userId === uid);
+    if (s) setSelectedStudent(s);
+  }, [studentRows]);
+
   // Palette commands
   const paletteCommands = useMemo(() => {
     const cmds = [];
@@ -6162,6 +6183,50 @@ const contentKpis = useMemo(() => {
 
         </div>
 
+        {/* ── Analytics section: Smart Alerts + Trends + Calendar + Comparison ── */}
+        <div className="fade-up fade-up-3" style={{ marginTop: 20, marginBottom: 16 }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1.3fr) minmax(280px, 1fr)",
+            gap: 16,
+          }}>
+            {/* Smart alerts */}
+            <SmartAlerts
+              studentRows={studentRows}
+              overview={overview}
+              courseInfo={courseInfo}
+              contentKpis={contentKpis}
+              onStudentClick={selectStudentById}
+            />
+
+            {/* Tendencias del curso */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Tendencias del curso <InfoTooltip text="Evolución de nota promedio, porcentaje en riesgo y cobertura a lo largo de los últimos días. Los datos se capturan automáticamente cada vez que abres el dashboard." /></span>} accent="brand">
+              <CourseTrends snapshots={courseSnapshots} />
+            </Card>
+          </div>
+        </div>
+
+        <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : isNarrow ? "1fr" : "minmax(320px, 1fr) minmax(280px, 1fr)",
+            gap: 16,
+          }}>
+            {/* Calendario de entregas */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final." /></span>}>
+              <DueDateCalendar studentRows={studentRows} drawerEvidences={drawerEvidences} />
+            </Card>
+
+            {/* Comparativa con otros cursos */}
+            <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Mis cursos (comparativa) <InfoTooltip text="Compara el curso actual con tus otros cursos activos. Haz clic en otro curso para cambiarte." /></span>}>
+              <CoursesComparison
+                currentOrgUnitId={orgUnitId}
+                onSelectCourse={(id) => { setOrgUnitId(Number(id)); setOrgUnitInput(String(id)); }}
+              />
+            </Card>
+          </div>
+        </div>
+
         <div ref={studentsRef} className="fade-up fade-up-3" style={{ marginTop: 4 }}>
           <Card
             title={
@@ -6179,6 +6244,24 @@ const contentKpis = useMemo(() => {
             }
             right={
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  className="btn"
+                  onClick={() => exportStudentsCsv(studentRows, courseInfo)}
+                  title="Exportar a CSV (abre en Excel)"
+                  aria-label="Exportar estudiantes a CSV"
+                  style={{ fontSize: 11, padding: "6px 10px" }}
+                >
+                  📥 CSV
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => exportCourseReport(studentRows, courseInfo, overview)}
+                  title="Generar reporte imprimible (PDF via Print)"
+                  aria-label="Generar reporte imprimible"
+                  style={{ fontSize: 11, padding: "6px 10px" }}
+                >
+                  🖨 Reporte
+                </button>
                 <label
                   style={{
                     display: "flex",

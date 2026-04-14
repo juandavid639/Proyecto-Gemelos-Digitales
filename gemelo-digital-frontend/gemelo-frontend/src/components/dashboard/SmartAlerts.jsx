@@ -1,0 +1,212 @@
+import React, { useMemo } from "react";
+import { computeRiskFromPct } from "../../utils/helpers";
+
+/**
+ * SmartAlerts: analyzes studentRows and course data to generate
+ * automatic alerts for the instructor. Pure client-side heuristics.
+ *
+ * Alert categories:
+ *  - CRITICAL: immediate attention (e.g., N students failed)
+ *  - WARNING: concerning patterns (e.g., coverage dropped)
+ *  - INFO: positive signals or neutral info
+ */
+export default function SmartAlerts({
+  studentRows = [],
+  overview = null,
+  courseInfo = null,
+  contentKpis = null,
+  onStudentClick = () => {},
+}) {
+  const alerts = useMemo(() => {
+    const rows = Array.isArray(studentRows) ? studentRows : [];
+    const loaded = rows.filter((s) => !s.isLoading);
+    if (loaded.length === 0) return [];
+
+    const out = [];
+
+    // 1. Students with failing grade (< 5.0)
+    const failing = loaded.filter(
+      (s) => s.currentPerformancePct != null && s.currentPerformancePct < 50
+    );
+    if (failing.length > 0) {
+      out.push({
+        id: "failing",
+        severity: "critical",
+        icon: "🔴",
+        title: `${failing.length} estudiante${failing.length !== 1 ? "s" : ""} con nota reprobatoria`,
+        message: `Nota actual menor a 5.0. Requieren intervención urgente.`,
+        students: failing.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
+        totalCount: failing.length,
+      });
+    }
+
+    // 2. Students with overdue evidences
+    const withOverdue = loaded.filter(
+      (s) => (s.notSubmittedWeightPct ?? s.overdueWeightPct ?? 0) > 10
+    );
+    if (withOverdue.length > 0) {
+      out.push({
+        id: "overdue",
+        severity: "critical",
+        icon: "⚠️",
+        title: `${withOverdue.length} estudiante${withOverdue.length !== 1 ? "s" : ""} con ítems vencidos sin entregar`,
+        message: "Más del 10% del peso del curso vencido sin registro.",
+        students: withOverdue.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
+        totalCount: withOverdue.length,
+      });
+    }
+
+    // 3. Students without any grade (potential dropouts)
+    const noGrade = loaded.filter(
+      (s) => s.currentPerformancePct == null || s.currentPerformancePct === 0
+    );
+    if (noGrade.length > 0 && noGrade.length < loaded.length * 0.5) {
+      out.push({
+        id: "no_grade",
+        severity: "warning",
+        icon: "❓",
+        title: `${noGrade.length} estudiante${noGrade.length !== 1 ? "s" : ""} sin nota registrada`,
+        message: "Pueden ser abandonos. Verifica su actividad reciente.",
+        students: noGrade.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
+        totalCount: noGrade.length,
+      });
+    }
+
+    // 4. Low coverage overall
+    const avgCoverage = overview?.courseGradebook?.avgCoveragePct;
+    if (avgCoverage != null && avgCoverage < 30) {
+      out.push({
+        id: "low_cov",
+        severity: "warning",
+        icon: "📉",
+        title: "Cobertura evaluativa baja",
+        message: `Solo ${avgCoverage.toFixed(1)}% del curso está calificado. Revisa si hay ítems sin publicar.`,
+        students: null,
+      });
+    }
+
+    // 5. Pending grade backlog for the instructor
+    const pendingGradeBacklog = loaded.filter(
+      (s) => (s.pendingSubmittedWeightPct ?? 0) > 15
+    );
+    if (pendingGradeBacklog.length > 0) {
+      out.push({
+        id: "pending_grade",
+        severity: "warning",
+        icon: "⏳",
+        title: `${pendingGradeBacklog.length} estudiante${pendingGradeBacklog.length !== 1 ? "s" : ""} esperando calificación`,
+        message: "Hay entregas recibidas pendientes por calificar. Prioriza el cierre evaluativo.",
+        students: pendingGradeBacklog.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
+        totalCount: pendingGradeBacklog.length,
+      });
+    }
+
+    // 6. Content rhythm alert
+    if (contentKpis?.progressRatio != null && contentKpis.progressRatio < 0.8) {
+      out.push({
+        id: "content_rhythm",
+        severity: "warning",
+        icon: "📅",
+        title: "Ritmo de publicación de contenidos bajo",
+        message: `Has publicado ${contentKpis.createdCount}/${contentKpis.minExpected} contenidos esperados (${Math.round(contentKpis.progressRatio * 100)}%). Considera publicar más material.`,
+        students: null,
+      });
+    }
+
+    // 7. Positive: high performers
+    const high = loaded.filter(
+      (s) => s.currentPerformancePct != null && s.currentPerformancePct >= 85
+    );
+    if (high.length > 0 && high.length >= loaded.length * 0.3) {
+      out.push({
+        id: "high_performers",
+        severity: "info",
+        icon: "🏆",
+        title: `${high.length} estudiante${high.length !== 1 ? "s" : ""} con excelente desempeño`,
+        message: "Nota ≥ 8.5. Considera retos adicionales para mantener su motivación.",
+        students: high.slice(0, 5).map((s) => ({ id: s.userId, name: s.displayName })),
+        totalCount: high.length,
+      });
+    }
+
+    // Sort: critical first, then warning, then info
+    const sevOrder = { critical: 0, warning: 1, info: 2 };
+    out.sort((a, b) => (sevOrder[a.severity] ?? 99) - (sevOrder[b.severity] ?? 99));
+
+    return out;
+  }, [studentRows, overview, contentKpis]);
+
+  if (alerts.length === 0) return null;
+
+  const severityStyles = {
+    critical: { border: "var(--critical)", bg: "var(--critical-bg)", color: "var(--critical)" },
+    warning: { border: "var(--watch)", bg: "var(--watch-bg)", color: "var(--watch)" },
+    info: { border: "var(--ok)", bg: "var(--ok-bg)", color: "var(--ok)" },
+  };
+
+  return (
+    <div className="kpi-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "14px 18px", borderBottom: "1px solid var(--border)",
+        background: "var(--bg)",
+      }}>
+        <span style={{ fontSize: 18 }}>💡</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>
+            Alertas inteligentes
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>
+            {alerts.length} detectada{alerts.length !== 1 ? "s" : ""} · Análisis automático
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {alerts.map((alert) => {
+          const s = severityStyles[alert.severity] || severityStyles.info;
+          return (
+            <div
+              key={alert.id}
+              style={{
+                padding: "12px 18px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex", gap: 12, alignItems: "flex-start",
+                borderLeft: `3px solid ${s.border}`,
+                background: s.bg,
+              }}
+            >
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{alert.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: s.color, marginBottom: 2 }}>
+                  {alert.title}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
+                  {alert.message}
+                </div>
+                {alert.students && alert.students.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {alert.students.map((st) => (
+                      <button
+                        key={st.id}
+                        onClick={() => onStudentClick(st.id)}
+                        className="chip"
+                        style={{ fontSize: 10, padding: "3px 8px" }}
+                      >
+                        {(st.name || "").split(" ").slice(0, 2).join(" ")}
+                      </button>
+                    ))}
+                    {alert.totalCount > alert.students.length && (
+                      <span style={{ fontSize: 10, color: "var(--muted)", alignSelf: "center" }}>
+                        +{alert.totalCount - alert.students.length} más
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
