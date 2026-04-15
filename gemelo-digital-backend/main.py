@@ -1191,19 +1191,154 @@ async def brightspace_dropbox_download(
 async def brightspace_dropbox_feedback(
     request: Request, org_unit_id: int, folder_id: int, user_id: int
 ):
-    """Get the teacher's feedback for a student's dropbox submission.
-    Returns the Feedback object (text, rubric, files, score, etc.).
-    Requires scope: dropbox:folders:read"""
+    """Get the teacher's feedback for a student's dropbox submission,
+    including the rubric assessment (per-criterion levels + comments) when
+    the dropbox has rubrics associated.
+
+    Returns:
+        {
+            feedback: {Score, Feedback{Text,Html}, Files, IsGraded, ...},
+            folderName: str,
+            rubrics: [
+                {rubricId, name, outOf, score, level, criteria: [
+                    {name, level, points, comment}
+                ]}
+            ],
+        }
+    Requires scope: dropbox:folders:read + rubrics:assessments:read
+    """
+    import asyncio
     token, err = _require_token_from_request(request)
     if err:
         return err
-    # entityType=1 is "User" (vs 2 = Group)
-    url = (
+    headers = _auth_headers(token)
+
+    # 1. Feedback (the correct LE path uses /feedback/{userId} directly, no entityType)
+    feedback_url = (
         f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
-        f"/{org_unit_id}/dropbox/folders/{folder_id}/feedback/1/{user_id}"
+        f"/{org_unit_id}/dropbox/folders/{folder_id}/feedback/{user_id}"
     )
-    status, data = await _bs_get(url, _auth_headers(token))
-    return JSONResponse(status_code=status, content=data)
+    # 2. Folder info (for rubric IDs + name)
+    folder_url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+        f"/{org_unit_id}/dropbox/folders/{folder_id}"
+    )
+
+    (fb_status, fb_data), (_, folder_data) = await asyncio.gather(
+        _bs_get(feedback_url, headers),
+        _bs_get(folder_url, headers),
+    )
+
+    # If feedback fetch failed, still return whatever we have
+    if fb_status != 200 or not isinstance(fb_data, dict):
+        fb_data = {}
+
+    folder_data = folder_data if isinstance(folder_data, dict) else {}
+    folder_name = folder_data.get("Name") or ""
+    rubric_refs = (folder_data.get("Assessment") or {}).get("Rubrics") or []
+
+    # 3. For each rubric, fetch the assessment (per-criterion levels + comments)
+    rubrics_out: list[dict] = []
+    if rubric_refs:
+        async def _fetch_rubric(rubric_ref: dict) -> dict | None:
+            rubric_id = rubric_ref.get("RubricId")
+            if rubric_id is None:
+                return None
+            # Rubric definition (for criterion names + level names)
+            rubric_def_url = (
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/rubrics/{rubric_id}"
+            )
+            # Assessment (what levels the teacher selected for this student)
+            assessment_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/unstable/{org_unit_id}/assessment"
+            assess_params = {
+                "assessmentType": "Rubric",
+                "objectType":     "Dropbox",
+                "objectId":       str(folder_id),
+                "rubricId":       str(rubric_id),
+                "userId":         str(user_id),
+            }
+            (_, rubric_def), (_, assess_data) = await asyncio.gather(
+                _bs_get(rubric_def_url, headers),
+                _bs_get(assessment_url, headers, assess_params),
+            )
+            rubric_def = rubric_def if isinstance(rubric_def, dict) else {}
+            assess_data = assess_data if isinstance(assess_data, dict) else {}
+
+            # Extract criterion results from assessment
+            crit_results_raw = (
+                assess_data.get("CriteriaResults")
+                or assess_data.get("criteriaResults")
+                or []
+            )
+            crit_map: dict = {}
+            for cr in crit_results_raw:
+                if not isinstance(cr, dict):
+                    continue
+                cid = cr.get("CriterionId") or cr.get("criterionId")
+                if cid is None:
+                    continue
+                crit_map[str(cid)] = {
+                    "levelId":  cr.get("LevelId") or cr.get("levelId"),
+                    "score":    cr.get("Score")   or cr.get("score"),
+                    "feedback": (cr.get("Feedback") or {}).get("Text")
+                                or (cr.get("Feedback") or {}).get("Html")
+                                or cr.get("feedback") or "",
+                }
+
+            # Build a lookup of level name by id across the rubric
+            levels_by_id: dict = {}
+            for lvl in (rubric_def.get("Levels") or []):
+                if isinstance(lvl, dict):
+                    lid = lvl.get("Id")
+                    if lid is not None:
+                        levels_by_id[str(lid)] = lvl.get("Name") or ""
+
+            criteria_out = []
+            for c in (rubric_def.get("Criteria") or []):
+                if not isinstance(c, dict):
+                    continue
+                cid = c.get("Id")
+                result = crit_map.get(str(cid)) if cid is not None else None
+                level_name = ""
+                if result and result.get("levelId") is not None:
+                    level_name = levels_by_id.get(str(result["levelId"]), "")
+                criteria_out.append({
+                    "id":       cid,
+                    "name":     c.get("Name") or "",
+                    "level":    level_name,
+                    "points":   (result or {}).get("score"),
+                    "comment":  (result or {}).get("feedback") or "",
+                })
+
+            overall = assess_data.get("OverallLevel") or {}
+            return {
+                "rubricId":   rubric_id,
+                "name":       rubric_def.get("Name") or rubric_ref.get("Name") or "",
+                "outOf":      rubric_def.get("MaxPoints") or rubric_def.get("OutOf"),
+                "score":      assess_data.get("Score") or assess_data.get("score"),
+                "level":      overall.get("Name") or overall.get("name") or "",
+                "criteria":   criteria_out,
+            }
+
+        fetched = await asyncio.gather(*[_fetch_rubric(r) for r in rubric_refs])
+        rubrics_out = [r for r in fetched if r]
+
+    # Normalize feedback text (Brightspace uses Feedback.Text or Feedback.Html)
+    fb_obj = fb_data.get("Feedback") if isinstance(fb_data.get("Feedback"), dict) else {}
+    feedback_text = fb_obj.get("Html") or fb_obj.get("Text") or ""
+
+    return JSONResponse(content={
+        "folderId":    folder_id,
+        "folderName":  folder_name,
+        "userId":      user_id,
+        "score":       fb_data.get("Score"),
+        "outOf":       fb_data.get("OutOf"),
+        "isGraded":    fb_data.get("IsGraded"),
+        "feedbackText": feedback_text,
+        "files":       fb_data.get("Files") or [],
+        "rubrics":     rubrics_out,
+        "raw":         fb_data,
+    })
 
 
 @app.get("/brightspace/course/{org_unit_id}/assignments/{assignment_id}")

@@ -450,6 +450,28 @@ async def gemelo_grade_items(
         except Exception:
             return []
 
+    def _pick_dropbox_due_date(df: dict) -> Optional[str]:
+        """Extract a usable due/end date from a dropbox folder, trying several
+        fields because Brightspace stores dates in different places depending
+        on whether the teacher configured a real DueDate or only Availability."""
+        if not isinstance(df, dict):
+            return None
+        # Direct fields (older API shape)
+        direct = df.get("DueDate") or df.get("EndDate")
+        if direct:
+            return direct
+        # Newer API shape: Availability { StartDate, EndDate, DueDate }
+        availability = df.get("Availability") or {}
+        if isinstance(availability, dict):
+            for k in ("DueDate", "EndDate", "dueDate", "endDate"):
+                if availability.get(k):
+                    return availability[k]
+        # RestrictedDueDate etc.
+        for k in ("RestrictedDueDate", "SubmissionEndDate"):
+            if df.get(k):
+                return df[k]
+        return None
+
     try:
         grade_items, dropbox_folders = await asyncio.gather(
             _safe_grade_items(),
@@ -496,10 +518,11 @@ async def gemelo_grade_items(
             if linked_dropbox:
                 seen_dropbox_ids.add(str(linked_dropbox.get("Id") or ""))
                 # Prefer dropbox due date if grade item doesn't have one
+                df_due = _pick_dropbox_due_date(linked_dropbox)
                 if not due_date:
-                    due_date = linked_dropbox.get("DueDate")
+                    due_date = df_due
                 if not end_date:
-                    end_date = linked_dropbox.get("DueDate") or linked_dropbox.get("EndDate")
+                    end_date = df_due
 
             items.append({
                 "id": grade_id,
@@ -522,13 +545,14 @@ async def gemelo_grade_items(
             df_id = df.get("Id") or df.get("Identifier")
             if str(df_id) in seen_dropbox_ids:
                 continue
+            df_due = _pick_dropbox_due_date(df)
             items.append({
                 "id": df_id,
                 "name": df.get("Name"),
                 "weightPct": None,
                 "maxPoints": None,
-                "dueDate": df.get("DueDate"),
-                "endDate": df.get("DueDate") or df.get("EndDate"),
+                "dueDate": df_due,
+                "endDate": df_due,
                 "gradeType": "Dropbox",
                 "categoryId": df.get("CategoryId"),
                 "source": "dropbox",

@@ -412,48 +412,150 @@ export default function EvidenceReports({
                 </div>
               ) : (() => {
                 const fb = feedbackModal.data || {};
-                const text = fb.Feedback?.Text || fb.Feedback?.Html || fb.feedback?.Text || fb.feedback?.Html || "";
-                const score = fb.Score ?? fb.score;
-                const files = fb.Files || fb.files || [];
-                const hasContent = text || score != null || (Array.isArray(files) && files.length > 0);
+                const text = fb.feedbackText || "";
+                const score = fb.score;
+                const outOf = fb.outOf;
+                const files = Array.isArray(fb.files) ? fb.files : [];
+                const rubrics = Array.isArray(fb.rubrics) ? fb.rubrics : [];
+                const hasContent =
+                  text || score != null || files.length > 0 || rubrics.length > 0;
                 return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    {score != null && (
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase" }}>Puntaje:</span>
-                        <span style={{ fontSize: 18, fontWeight: 900, fontFamily: "var(--font-mono)", color: "var(--brand)" }}>{score}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {/* Global score header */}
+                    {(score != null || outOf != null) && (
+                      <div style={{
+                        display: "flex", alignItems: "baseline", gap: 10,
+                        padding: "10px 14px", borderRadius: 10,
+                        background: "var(--brand-light)",
+                        border: "1px solid var(--brand-light2, #D6E4FF)",
+                      }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Calificación
+                        </span>
+                        <span style={{
+                          fontSize: 22, fontWeight: 900,
+                          fontFamily: "var(--font-mono)", color: "var(--brand)",
+                          marginLeft: "auto",
+                        }}>
+                          {score != null ? score : "—"}
+                          {outOf != null && (
+                            <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>
+                              {" "}/ {outOf}
+                            </span>
+                          )}
+                        </span>
                       </div>
                     )}
+
+                    {/* Teacher's general comment */}
                     {text && (
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>Comentarios</div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                          💬 Comentario general del docente
+                        </div>
                         <div
                           style={{
-                            fontSize: 13, lineHeight: 1.5, color: "var(--text)",
-                            padding: 12, borderRadius: 8,
+                            fontSize: 13, lineHeight: 1.6, color: "var(--text)",
+                            padding: "12px 14px", borderRadius: 10,
                             background: "var(--bg)", border: "1px solid var(--border)",
-                            whiteSpace: "pre-wrap",
                           }}
                           dangerouslySetInnerHTML={{ __html: text }}
                         />
                       </div>
                     )}
-                    {Array.isArray(files) && files.length > 0 && (
+
+                    {/* Rubrics (per criterion level + comments) */}
+                    {rubrics.length > 0 && rubrics.map((r, ri) => (
+                      <div key={ri}>
+                        <div style={{
+                          display: "flex", alignItems: "baseline", gap: 8,
+                          marginBottom: 8,
+                        }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            📋 Rúbrica: {r.name || "Sin nombre"}
+                          </span>
+                          {r.score != null && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)", marginLeft: "auto" }}>
+                              {r.score}{r.outOf != null ? ` / ${r.outOf}` : ""}
+                              {r.level && ` · ${r.level}`}
+                            </span>
+                          )}
+                        </div>
+                        {Array.isArray(r.criteria) && r.criteria.length > 0 ? (
+                          <div style={{
+                            border: "1px solid var(--border)", borderRadius: 10,
+                            overflow: "hidden",
+                          }}>
+                            {r.criteria.map((c, ci) => (
+                              <div key={ci} style={{
+                                padding: "10px 14px",
+                                borderTop: ci === 0 ? "none" : "1px solid var(--border)",
+                                background: ci % 2 === 0 ? "var(--bg)" : "var(--card)",
+                                display: "flex", flexDirection: "column", gap: 4,
+                              }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flex: 1 }}>
+                                    {c.name}
+                                  </span>
+                                  {c.level && (
+                                    <span className="tag" style={{
+                                      background: "rgba(52, 120, 246, 0.12)",
+                                      color: "var(--brand)",
+                                      fontSize: 10, fontWeight: 700,
+                                      padding: "2px 8px", borderRadius: 10,
+                                    }}>
+                                      {c.level}
+                                    </span>
+                                  )}
+                                  {c.points != null && (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 800,
+                                      fontFamily: "var(--font-mono)", color: "var(--muted)",
+                                      minWidth: 30, textAlign: "right",
+                                    }}>
+                                      {c.points}
+                                    </span>
+                                  )}
+                                </div>
+                                {c.comment && (
+                                  <div
+                                    style={{
+                                      fontSize: 11, color: "var(--muted)",
+                                      lineHeight: 1.5, paddingLeft: 2,
+                                      fontStyle: "italic",
+                                    }}
+                                    dangerouslySetInnerHTML={{ __html: c.comment }}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", padding: "8px 0" }}>
+                            Rúbrica sin criterios evaluados
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Teacher's attached files */}
+                    {files.length > 0 && (
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", marginBottom: 6 }}>
-                          Archivos adjuntos del docente ({files.length})
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                          📎 Archivos del docente ({files.length})
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           {files.map((f, idx) => (
                             <div key={idx} style={{ fontSize: 12, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border)" }}>
-                              📎 {f.FileName || f.Name || `Archivo ${idx + 1}`}
+                              {f.FileName || f.Name || `Archivo ${idx + 1}`}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
+
                     {!hasContent && (
-                      <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", textAlign: "center", padding: 16 }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", textAlign: "center", padding: 20 }}>
                         Sin retroalimentación registrada para esta entrega.
                       </div>
                     )}
