@@ -1263,7 +1263,187 @@ async def brightspace_dropbox_feedback(
             if rid is not None:
                 fb_rubric_by_id[str(rid)] = ra
 
-    if rubric_refs:
+    # ── PREFERRED PATH (LMS v20.26.4+, LE API 1.93+) ──────────────────────
+    # New endpoints documented by D2L for the Rubrics API:
+    #   GET /d2l/api/le/1.93/{ou}/rubrics?objectType=Dropbox&objectId={fid}
+    #   GET /d2l/api/le/1.93/{ou}/assessment?assessmentType=Rubric&objectType=Dropbox
+    #                                     &objectId={fid}&rubricId={rid}&userId={uid}
+    #
+    # The list endpoint returns an array of Rubric blocks with CriteriaGroups
+    # (each group has Levels + Criteria with Cells). The assessment endpoint
+    # returns a RubricAssessment with OverallOutcome and CriteriaOutcome.
+    #
+    # We try this path first; if it 404s (older tenant), we fall back to the
+    # legacy probe-many-endpoints logic below.
+    modern_rubrics: list[dict] = []
+    modern_list_url = (
+        f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/1.93/{org_unit_id}/rubrics"
+    )
+    modern_list_params = {"objectType": "Dropbox", "objectId": str(folder_id)}
+    try:
+        ml_status, ml_data = await _bs_get(modern_list_url, headers, modern_list_params)
+        if ml_status == 200:
+            # Response may be a raw array OR a paged dict with "Items"
+            if isinstance(ml_data, list):
+                modern_rubrics = ml_data
+            elif isinstance(ml_data, dict):
+                modern_rubrics = ml_data.get("Items") or ml_data.get("items") or []
+    except Exception:
+        modern_rubrics = []
+
+    def _flatten_groups(rubric_obj: dict) -> tuple[list, list]:
+        """Flatten CriteriaGroups → (criteria, levels)."""
+        all_crit = []
+        all_lvl = []
+        groups = rubric_obj.get("CriteriaGroups") or rubric_obj.get("criteriaGroups") or []
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            for lvl in (g.get("Levels") or []):
+                if isinstance(lvl, dict):
+                    all_lvl.append(lvl)
+            for c in (g.get("Criteria") or []):
+                if isinstance(c, dict):
+                    all_crit.append(c)
+        # Older shape: flat Criteria/Levels at top
+        if not all_crit:
+            for c in (rubric_obj.get("Criteria") or []):
+                if isinstance(c, dict): all_crit.append(c)
+        if not all_lvl:
+            for l in (rubric_obj.get("Levels") or []):
+                if isinstance(l, dict): all_lvl.append(l)
+        return all_crit, all_lvl
+
+    async def _fetch_modern_assessment(rubric_id: int) -> dict:
+        url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/1.93/{org_unit_id}/assessment"
+        params = {
+            "assessmentType": "Rubric",
+            "objectType":     "Dropbox",
+            "objectId":       str(folder_id),
+            "rubricId":       str(rubric_id),
+            "userId":         str(user_id),
+        }
+        try:
+            _, data = await _bs_get(url, headers, params)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    async def _build_modern(rubric_obj: dict) -> dict | None:
+        rubric_id = rubric_obj.get("RubricId") or rubric_obj.get("Id")
+        if rubric_id is None:
+            return None
+        criteria_list, levels_list = _flatten_groups(rubric_obj)
+        assess = await _fetch_modern_assessment(rubric_id)
+
+        # Build level lookup
+        levels_by_id: dict = {}
+        for lvl in levels_list:
+            lid = lvl.get("Id")
+            if lid is not None:
+                levels_by_id[str(lid)] = lvl.get("Name") or ""
+
+        # Extract CriteriaOutcome (new shape) or fall back to CriteriaResults
+        outcomes_raw = (
+            assess.get("CriteriaOutcome")
+            or assess.get("criteriaOutcome")
+            or assess.get("CriteriaResults")
+            or []
+        )
+        crit_map: dict = {}
+        for out in outcomes_raw:
+            if not isinstance(out, dict):
+                continue
+            cid = out.get("CriterionId") or out.get("criterionId")
+            if cid is None:
+                continue
+            fb_obj = out.get("Feedback") or {}
+            fb_text = ""
+            if isinstance(fb_obj, dict):
+                fb_text = fb_obj.get("Html") or fb_obj.get("Text") or ""
+            crit_map[str(cid)] = {
+                "levelId": out.get("LevelId") or out.get("levelId"),
+                "score":   out.get("Score") or out.get("score"),
+                "comment": fb_text,
+            }
+
+        criteria_out = []
+        for c in criteria_list:
+            cid = c.get("Id")
+            result = crit_map.get(str(cid)) if cid is not None else None
+            level_name = ""
+            if result and result.get("levelId") is not None:
+                level_name = levels_by_id.get(str(result["levelId"]), "")
+            criteria_out.append({
+                "id":      cid,
+                "name":    c.get("Name") or "",
+                "level":   level_name,
+                "points":  (result or {}).get("score"),
+                "comment": (result or {}).get("comment") or "",
+            })
+
+        # Overall info from OverallOutcome
+        overall = assess.get("OverallOutcome") or assess.get("overallOutcome") or {}
+        overall_level_name = ""
+        if isinstance(overall, dict) and overall.get("LevelId") is not None:
+            overall_level_name = levels_by_id.get(str(overall["LevelId"]), "")
+            # If not found in criterion-group levels, try OverallLevels
+            if not overall_level_name:
+                for ol in (rubric_obj.get("OverallLevels") or []):
+                    if isinstance(ol, dict) and str(ol.get("Id")) == str(overall["LevelId"]):
+                        overall_level_name = ol.get("Name") or ""
+                        break
+        overall_fb_obj = overall.get("Feedback") if isinstance(overall, dict) else None
+        overall_comment = ""
+        if isinstance(overall_fb_obj, dict):
+            overall_comment = overall_fb_obj.get("Html") or overall_fb_obj.get("Text") or ""
+
+        # Compute max points as sum of max level points per criterion (analytic
+        # rubrics). For holistic rubrics, use OverallLevels max.
+        max_points = None
+        try:
+            per_crit_max = 0
+            any_pts = False
+            for c in criteria_list:
+                cells = c.get("Cells") or []
+                cell_max = 0
+                for cell in cells:
+                    pts = cell.get("Points")
+                    if pts is not None:
+                        any_pts = True
+                        try:
+                            cell_max = max(cell_max, float(pts))
+                        except Exception:
+                            pass
+                per_crit_max += cell_max
+            if any_pts and per_crit_max > 0:
+                max_points = per_crit_max
+        except Exception:
+            max_points = None
+
+        return {
+            "rubricId":       rubric_id,
+            "name":           rubric_obj.get("Name") or "",
+            "outOf":          max_points,
+            "score":          (overall or {}).get("Score"),
+            "level":          overall_level_name,
+            "overallComment": overall_comment,
+            "criteria":       criteria_out,
+            "_debug": {
+                "source":     "le-1.93",
+                "critCount":  len(criteria_list),
+                "lvlCount":   len(levels_list),
+                "outcomes":   len(outcomes_raw),
+            },
+        }
+
+    if modern_rubrics:
+        built = await asyncio.gather(*[_build_modern(r) for r in modern_rubrics])
+        rubrics_out = [r for r in built if r]
+
+    # ── LEGACY PATH ──────────────────────────────────────────────────────
+    # Only used if the modern endpoint returned nothing (pre-1.93 tenant).
+    if not rubrics_out and rubric_refs:
         async def _fetch_rubric(rubric_ref: dict) -> dict | None:
             rubric_id = rubric_ref.get("RubricId")
             if rubric_id is None:

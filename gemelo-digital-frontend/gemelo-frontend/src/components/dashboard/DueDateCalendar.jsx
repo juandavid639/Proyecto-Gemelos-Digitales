@@ -47,6 +47,11 @@ export default function DueDateCalendar({ orgUnitId }) {
       if (!it?.dueDate) continue;
       const d = new Date(it.dueDate);
       if (Number.isNaN(d.getTime())) continue;
+      let start = null;
+      if (it.startDate) {
+        const s = new Date(it.startDate);
+        if (!Number.isNaN(s.getTime())) start = s;
+      }
       const msDiff = d - now;
       const daysUntil = Math.floor(msDiff / 86400000);
       const hoursUntil = Math.floor(msDiff / 3600000);
@@ -54,8 +59,10 @@ export default function DueDateCalendar({ orgUnitId }) {
         id: it.id,
         name: it.name || `Ítem ${it.id}`,
         weightPct: Number(it.weightPct || 0),
+        start,
         due: d,
         dueIso: it.dueDate,
+        startIso: it.startDate || null,
         msDiff,
         daysUntil,
         hoursUntil,
@@ -233,6 +240,9 @@ export default function DueDateCalendar({ orgUnitId }) {
         }
       `}</style>
 
+      {/* Visual month grid with hover range highlighting */}
+      <MonthGrid assignments={assignments} />
+
       {upcoming.length > 0 ? (
         <div>
           <div style={{
@@ -276,6 +286,299 @@ export default function DueDateCalendar({ orgUnitId }) {
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", borderTop: "1px solid var(--border)", paddingTop: 8 }}>
         {items.length} ítems del curso · {assignments.length} con fecha de entrega
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MonthGrid — lightweight month calendar with hover-range highlighting.
+// When the user hovers over an assignment chip, the date range from its
+// start date to its due date is highlighted across the grid cells.
+// ─────────────────────────────────────────────────────────────────────────
+function MonthGrid({ assignments }) {
+  // Start on the month that contains the first upcoming assignment (or today)
+  const initialMonth = React.useMemo(() => {
+    const now = new Date();
+    const firstUpcoming = assignments.find((a) => !a.isPast);
+    const ref = firstUpcoming ? firstUpcoming.due : now;
+    return new Date(ref.getFullYear(), ref.getMonth(), 1);
+  }, [assignments]);
+
+  const [cursorMonth, setCursorMonth] = useState(initialMonth);
+  const [hoverId, setHoverId] = useState(null);
+
+  useEffect(() => {
+    setCursorMonth(initialMonth);
+  }, [initialMonth]);
+
+  const year = cursorMonth.getFullYear();
+  const month = cursorMonth.getMonth();
+
+  // Build the grid days (6 rows × 7 cols = 42 cells, starting from the
+  // Sunday before or on the 1st of the month)
+  const gridDays = useMemo(() => {
+    const firstOfMonth = new Date(year, month, 1);
+    const firstWeekday = firstOfMonth.getDay(); // 0 = Sun
+    const start = new Date(year, month, 1 - firstWeekday);
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      cells.push(d);
+    }
+    return cells;
+  }, [year, month]);
+
+  // Index assignments by YYYY-MM-DD (by due date) for quick lookup
+  const byDate = useMemo(() => {
+    const map = new Map();
+    for (const a of assignments) {
+      const key = a.due.toISOString().slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(a);
+    }
+    return map;
+  }, [assignments]);
+
+  const hoverAssignment = useMemo(
+    () => assignments.find((a) => a.id === hoverId) || null,
+    [assignments, hoverId]
+  );
+
+  const isInHoverRange = (day) => {
+    if (!hoverAssignment) return false;
+    const start = hoverAssignment.start || hoverAssignment.due;
+    const end = hoverAssignment.due;
+    const t = day.getTime();
+    return t >= new Date(start.toDateString()).getTime() &&
+           t <= new Date(end.toDateString()).getTime();
+  };
+
+  const isHoverStart = (day) =>
+    hoverAssignment?.start &&
+    day.toDateString() === hoverAssignment.start.toDateString();
+
+  const isHoverEnd = (day) =>
+    hoverAssignment &&
+    day.toDateString() === hoverAssignment.due.toDateString();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const monthName = cursorMonth.toLocaleDateString("es-CO", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const weekdayHeaders = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
+
+  const goPrev = () => setCursorMonth(new Date(year, month - 1, 1));
+  const goNext = () => setCursorMonth(new Date(year, month + 1, 1));
+  const goToday = () => {
+    const t = new Date();
+    setCursorMonth(new Date(t.getFullYear(), t.getMonth(), 1));
+  };
+
+  return (
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: 12,
+      padding: 12,
+      background: "var(--card)",
+    }}>
+      {/* Month header with nav */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        marginBottom: 10,
+      }}>
+        <button
+          onClick={goPrev}
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid var(--border)", background: "var(--bg)",
+            cursor: "pointer", color: "var(--text)", fontSize: 14,
+            fontFamily: "var(--font)",
+          }}
+          title="Mes anterior"
+        >‹</button>
+        <button
+          onClick={goToday}
+          style={{
+            height: 28, padding: "0 10px", borderRadius: 6,
+            border: "1px solid var(--border)", background: "var(--bg)",
+            cursor: "pointer", color: "var(--muted)", fontSize: 10,
+            fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+            fontFamily: "var(--font)",
+          }}
+          title="Ir al mes actual"
+        >Hoy</button>
+        <div style={{
+          flex: 1,
+          fontSize: 13, fontWeight: 800, color: "var(--text)",
+          textTransform: "capitalize", textAlign: "center",
+        }}>
+          {monthName}
+        </div>
+        <button
+          onClick={goNext}
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid var(--border)", background: "var(--bg)",
+            cursor: "pointer", color: "var(--text)", fontSize: 14,
+            fontFamily: "var(--font)",
+          }}
+          title="Mes siguiente"
+        >›</button>
+      </div>
+
+      {/* Weekday headers */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(7, 1fr)",
+        gap: 2,
+        marginBottom: 4,
+      }}>
+        {weekdayHeaders.map((w) => (
+          <div key={w} style={{
+            fontSize: 9, fontWeight: 800, color: "var(--muted)",
+            textAlign: "center", padding: "4px 0",
+            letterSpacing: "0.05em",
+          }}>
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(7, 1fr)",
+        gap: 2,
+      }}>
+        {gridDays.map((day, idx) => {
+          const key = day.toISOString().slice(0, 10);
+          const inMonth = day.getMonth() === month;
+          const dayAssignments = byDate.get(key) || [];
+          const isToday = day.getTime() === today.getTime();
+          const inRange = isInHoverRange(day);
+          const isRangeStart = isHoverStart(day);
+          const isRangeEnd = isHoverEnd(day);
+
+          let bg = "transparent";
+          let borderColor = "transparent";
+          if (inRange) {
+            bg = "rgba(11, 95, 255, 0.15)";
+            borderColor = "rgba(11, 95, 255, 0.4)";
+          }
+          if (isToday) {
+            borderColor = "var(--brand)";
+          }
+
+          return (
+            <div
+              key={idx}
+              style={{
+                minHeight: 54,
+                padding: 3,
+                borderRadius: 6,
+                background: bg,
+                border: `1.5px solid ${borderColor}`,
+                opacity: inMonth ? 1 : 0.35,
+                position: "relative",
+                transition: "background 0.12s, border-color 0.12s",
+              }}
+            >
+              <div style={{
+                fontSize: 10, fontWeight: isToday ? 800 : 600,
+                color: isToday ? "var(--brand)" : (inMonth ? "var(--text)" : "var(--muted)"),
+                textAlign: "right",
+                paddingRight: 2,
+                marginBottom: 2,
+              }}>
+                {day.getDate()}
+                {isRangeStart && (
+                  <span style={{ fontSize: 8, color: "var(--brand)", marginLeft: 3 }}>▶</span>
+                )}
+                {isRangeEnd && !isRangeStart && (
+                  <span style={{ fontSize: 8, color: "var(--brand)", marginLeft: 3 }}>◀</span>
+                )}
+              </div>
+
+              {/* Assignment chips inside the cell */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {dayAssignments.slice(0, 2).map((a) => {
+                  const color = a.isPast
+                    ? "#94a3b8"
+                    : (a.isUrgent ? "#dc2626" : "#0b5fff");
+                  const isHovered = hoverId === a.id;
+                  return (
+                    <div
+                      key={a.id}
+                      onMouseEnter={() => setHoverId(a.id)}
+                      onMouseLeave={() => setHoverId((cur) => (cur === a.id ? null : cur))}
+                      title={`${a.name}${a.start ? ` · Disponible: ${a.start.toLocaleDateString("es-CO")}` : ""} · Vence: ${a.due.toLocaleDateString("es-CO")}`}
+                      style={{
+                        fontSize: 8, fontWeight: 700,
+                        padding: "2px 4px",
+                        borderRadius: 4,
+                        background: isHovered ? color : `${color}22`,
+                        color: isHovered ? "#fff" : color,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        cursor: "pointer",
+                        border: `1px solid ${color}66`,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {a.isUrgent && <span style={{ marginRight: 2 }}>!</span>}
+                      {a.name}
+                    </div>
+                  );
+                })}
+                {dayAssignments.length > 2 && (
+                  <div style={{
+                    fontSize: 8, color: "var(--muted)",
+                    textAlign: "center", fontWeight: 700,
+                  }}>
+                    +{dayAssignments.length - 2}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Hover info footer */}
+      {hoverAssignment && (
+        <div style={{
+          marginTop: 10, padding: "8px 12px",
+          borderRadius: 8,
+          background: "rgba(11, 95, 255, 0.06)",
+          border: "1px solid rgba(11, 95, 255, 0.25)",
+          fontSize: 11,
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <span style={{ fontSize: 14 }}>📌</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, color: "var(--text)" }}>{hoverAssignment.name}</div>
+            <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 1 }}>
+              {hoverAssignment.start ? (
+                <>
+                  Disponible desde <strong style={{ color: "var(--brand)" }}>
+                    {hoverAssignment.start.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
+                  </strong>
+                  {" → "}
+                </>
+              ) : "Vence "}
+              <strong style={{ color: hoverAssignment.isUrgent ? "#dc2626" : "var(--brand)" }}>
+                {hoverAssignment.due.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
+              </strong>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

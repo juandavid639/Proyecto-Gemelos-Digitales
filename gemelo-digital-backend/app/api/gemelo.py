@@ -472,6 +472,20 @@ async def gemelo_grade_items(
                 return df[k]
         return None
 
+    def _pick_dropbox_start_date(df: dict) -> Optional[str]:
+        """Extract the earliest visibility/availability date for a dropbox."""
+        if not isinstance(df, dict):
+            return None
+        direct = df.get("StartDate")
+        if direct:
+            return direct
+        availability = df.get("Availability") or {}
+        if isinstance(availability, dict):
+            for k in ("StartDate", "startDate"):
+                if availability.get(k):
+                    return availability[k]
+        return None
+
     try:
         grade_items, dropbox_folders = await asyncio.gather(
             _safe_grade_items(),
@@ -515,6 +529,7 @@ async def gemelo_grade_items(
             if not linked_dropbox and grade_id is not None:
                 linked_dropbox = dropbox_by_grade_item.get(str(grade_id))
 
+            start_date = None
             if linked_dropbox:
                 seen_dropbox_ids.add(str(linked_dropbox.get("Id") or ""))
                 # Prefer dropbox due date if grade item doesn't have one
@@ -523,12 +538,14 @@ async def gemelo_grade_items(
                     due_date = df_due
                 if not end_date:
                     end_date = df_due
+                start_date = _pick_dropbox_start_date(linked_dropbox)
 
             items.append({
                 "id": grade_id,
                 "name": name,
                 "weightPct": it.get("Weight"),
                 "maxPoints": it.get("MaxPoints"),
+                "startDate": start_date,
                 "dueDate": due_date,
                 "endDate": end_date,
                 "gradeType": it.get("GradeType"),
@@ -546,11 +563,13 @@ async def gemelo_grade_items(
             if str(df_id) in seen_dropbox_ids:
                 continue
             df_due = _pick_dropbox_due_date(df)
+            df_start = _pick_dropbox_start_date(df)
             items.append({
                 "id": df_id,
                 "name": df.get("Name"),
                 "weightPct": None,
                 "maxPoints": None,
+                "startDate": df_start,
                 "dueDate": df_due,
                 "endDate": df_due,
                 "gradeType": "Dropbox",
