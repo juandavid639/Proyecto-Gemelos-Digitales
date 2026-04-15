@@ -7158,43 +7158,138 @@ const contentKpis = useMemo(() => {
                   };
                   return (
                     <>
-                      {/* Cortes / resúmenes (no cuentan en el promedio) */}
+                      {/* Cortes agrupados por período (no cuentan en el promedio) */}
                       {drawerCorte.length > 0 && (
                         <Card title="Resumen por Cortes" right={<span className="tag">No suman</span>} accent="brand">
                           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
-                            📊 Estos son ponderados acumulados que Brightspace calcula. Se muestran como referencia pero <strong>no cuentan</strong> en el promedio del estudiante (evita doble conteo).
+                            📊 Ponderados acumulados que Brightspace calcula. Se agrupan por período y se muestran junto a las evidencias que lo componen. <strong>No cuentan</strong> en el promedio del estudiante.
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(3, drawerCorte.length)}, 1fr)`, gap: 10 }}>
-                            {drawerCorte
-                              .slice()
-                              .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
-                              .map((e, i) => {
-                                const gradeColor = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
-                                const isGraded = e.scorePct != null;
-                                return (
-                                  <div key={`corte-${i}`} style={{
-                                    padding: "14px 14px", borderRadius: 14,
-                                    border: `2px solid ${isGraded ? gradeColor : "var(--border)"}`,
-                                    background: isGraded ? `${gradeColor}0D` : "var(--bg)",
-                                    position: "relative",
-                                  }}>
-                                    <div style={{ position: "absolute", top: 8, right: 10, fontSize: 8, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Resumen</div>
-                                    <div style={{ fontSize: 9, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                                      Corte {e.cortePeriod || (i + 1)}
+                          {(() => {
+                            const groups = new Map();
+                            for (const e of drawerCorte) {
+                              const k = e.cortePeriod || 99;
+                              if (!groups.has(k)) groups.set(k, []);
+                              groups.get(k).push(e);
+                            }
+                            const keys = [...groups.keys()].sort((a, b) => a - b);
+                            const nonCorteByPeriod = new Map();
+                            for (const e of drawerNonCorte) {
+                              const k = e.cortePeriod;
+                              if (k == null) continue;
+                              if (!nonCorteByPeriod.has(k)) nonCorteByPeriod.set(k, []);
+                              nonCorteByPeriod.get(k).push(e);
+                            }
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                {keys.map((k) => {
+                                  const corteList = groups.get(k) || [];
+                                  const evList = nonCorteByPeriod.get(k) || [];
+                                  const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
+                                  const hPct = mainCorte?.scorePct;
+                                  const hColor = hPct != null ? colorForPct(hPct, thresholds) : "var(--muted)";
+                                  const label = k === 99 ? "Otros cortes" : `Corte ${k}`;
+                                  return (
+                                    <div key={`dc-grp-${k}`} style={{
+                                      borderRadius: 12,
+                                      border: `1.5px solid ${hColor === "var(--muted)" ? "var(--border)" : `${hColor}55`}`,
+                                      overflow: "hidden",
+                                      background: "var(--card)",
+                                    }}>
+                                      <div style={{
+                                        padding: "10px 14px",
+                                        background: hColor === "var(--muted)" ? "var(--bg)" : `${hColor}14`,
+                                        borderBottom: `1px solid ${hColor === "var(--muted)" ? "var(--border)" : `${hColor}33`}`,
+                                        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                                      }}>
+                                        <div style={{
+                                          width: 30, height: 30, borderRadius: 8,
+                                          background: hColor === "var(--muted)" ? "var(--bg)" : hColor,
+                                          color: hColor === "var(--muted)" ? "var(--muted)" : "#fff",
+                                          display: "flex", alignItems: "center", justifyContent: "center",
+                                          fontSize: 12, fontWeight: 900,
+                                        }}>{k === 99 ? "?" : k}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>{label}</div>
+                                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
+                                            {mainCorte?.name || label}
+                                          </div>
+                                        </div>
+                                        {hPct != null && (
+                                          <div style={{ textAlign: "right" }}>
+                                            <div style={{ fontSize: 8, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>Acum.</div>
+                                            <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "var(--font-mono)", color: hColor, lineHeight: 1 }}>
+                                              {(hPct / 10).toFixed(1)}<span style={{ fontSize: 10, color: "var(--muted)" }}>/10</span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div style={{ padding: "10px 14px" }}>
+                                        {corteList.length > 1 && (
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+                                            {corteList.filter(c => c !== mainCorte).map((c, idx) => {
+                                              const col = c.scorePct != null ? colorForPct(c.scorePct, thresholds) : "var(--muted)";
+                                              return (
+                                                <span key={`tc-${idx}`} style={{
+                                                  fontSize: 10, fontWeight: 700,
+                                                  padding: "3px 8px", borderRadius: 7,
+                                                  background: `${col}15`, border: `1px solid ${col}44`, color: col,
+                                                }}>
+                                                  {c.name}: <strong style={{ fontFamily: "var(--font-mono)" }}>{c.scorePct != null ? (c.scorePct / 10).toFixed(1) : "—"}</strong>
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                        {evList.length > 0 && (
+                                          <div>
+                                            <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", marginBottom: 5 }}>
+                                              Evidencias ({evList.length})
+                                            </div>
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                              {evList.map((e, idx) => {
+                                                const col = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
+                                                const isG = e.scorePct != null;
+                                                return (
+                                                  <div key={`tev-${idx}`} style={{
+                                                    display: "flex", alignItems: "center", gap: 8,
+                                                    padding: "5px 10px", borderRadius: 6,
+                                                    background: "var(--bg)", border: "1px solid var(--border)",
+                                                    fontSize: 11,
+                                                  }}>
+                                                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: col }} />
+                                                    <span style={{ flex: 1, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                      {e.name || `Ítem ${e.gradeObjectId}`}
+                                                    </span>
+                                                    {e.categoryName && (
+                                                      <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 8, background: "var(--brand-light)", color: "var(--brand)", fontWeight: 700 }}>
+                                                        {e.categoryName}
+                                                      </span>
+                                                    )}
+                                                    {e.weightPct > 0 && (
+                                                      <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{Number(e.weightPct).toFixed(0)}%</span>
+                                                    )}
+                                                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: 12, color: col, minWidth: 28, textAlign: "right" }}>
+                                                      {isG ? (e.scorePct / 10).toFixed(1) : "—"}
+                                                    </span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {mainCorte?.formula && (
+                                          <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 7, background: "rgba(99, 102, 241, 0.08)", border: "1px dashed rgba(99, 102, 241, 0.35)", fontSize: 10 }}>
+                                            <div style={{ fontWeight: 800, color: "rgb(79, 70, 229)", marginBottom: 2 }}>🧮 Fórmula</div>
+                                            <div style={{ fontFamily: "var(--font-mono)", color: "var(--muted)", wordBreak: "break-word" }}>{mainCorte.formula}</div>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", lineHeight: 1.3, marginTop: 3 }}>
-                                      {e.name || `Corte ${i + 1}`}
-                                    </div>
-                                    <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 6 }}>
-                                      <span style={{ fontSize: 26, fontWeight: 900, fontFamily: "var(--font-mono)", color: gradeColor, lineHeight: 1 }}>
-                                        {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
-                                      </span>
-                                      <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>/10</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                          </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </Card>
                       )}
 

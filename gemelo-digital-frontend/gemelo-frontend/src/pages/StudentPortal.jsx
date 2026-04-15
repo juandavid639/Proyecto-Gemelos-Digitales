@@ -619,51 +619,181 @@ export default function StudentPortal() {
           </div>
         )}
 
-        {/* ── Cortes / Resúmenes (no cuentan en promedio, solo display) ── */}
+        {/* ── Cortes agrupados por periodo ── */}
         {corteItems.length > 0 && (
           <div style={{ marginBottom: 20 }}>
             <Card title="Resumen por Cortes" accent="brand">
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
-                📊 Estos son los <strong>ponderados acumulados</strong> por corte. Son resumen de tus notas previas — se muestran para tu referencia pero no cuentan dos veces en el promedio.
+                📊 Cada corte muestra sus <strong>ponderados acumulados</strong> y las evidencias que lo componen. Los cortes son un resumen — <strong>no cuentan dos veces</strong> en tu promedio.
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${Math.min(3, corteItems.length)}, 1fr)`, gap: 12 }}>
-                {corteItems
-                  .slice()
-                  .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
-                  .map((e, i) => {
-                    const gradeColor = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
-                    const isGraded = e.scorePct != null;
-                    return (
-                      <div key={`corte-${i}`} style={{
-                        padding: "18px 16px",
-                        borderRadius: 16,
-                        border: `2px solid ${isGraded ? gradeColor : "var(--border)"}`,
-                        background: isGraded ? `${gradeColor}0D` : "var(--bg)",
-                        display: "flex", flexDirection: "column", gap: 8,
-                        position: "relative", overflow: "hidden",
-                      }}>
-                        <div style={{ position: "absolute", top: 10, right: 12, fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                          Resumen
+
+              {(() => {
+                // Group corte items by cortePeriod (1, 2, 3, ...)
+                const groups = new Map();
+                for (const e of corteItems) {
+                  const k = e.cortePeriod || 99;
+                  if (!groups.has(k)) groups.set(k, []);
+                  groups.get(k).push(e);
+                }
+                const sortedKeys = [...groups.keys()].sort((a, b) => a - b);
+
+                // For each corte, also find the non-corte evidences that
+                // belong to the same period (linked by cortePeriod OR by
+                // category matching the corte's name, as fallback)
+                const nonCorteByPeriod = new Map();
+                for (const e of nonCorteItems) {
+                  const k = e.cortePeriod;
+                  if (k == null) continue;
+                  if (!nonCorteByPeriod.has(k)) nonCorteByPeriod.set(k, []);
+                  nonCorteByPeriod.get(k).push(e);
+                }
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {sortedKeys.map((k) => {
+                      const corteList = groups.get(k) || [];
+                      const evList = nonCorteByPeriod.get(k) || [];
+
+                      // Best overall score to color the header: pick the first
+                      // graded corte for this period
+                      const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
+                      const headerPct = mainCorte?.scorePct;
+                      const headerColor = headerPct != null ? colorForPct(headerPct, thresholds) : "var(--muted)";
+                      const label = k === 99 ? "Otros cortes" : `Corte ${k}`;
+
+                      return (
+                        <div key={`corte-grp-${k}`} style={{
+                          borderRadius: 14,
+                          border: `1.5px solid ${headerColor === "var(--muted)" ? "var(--border)" : `${headerColor}55`}`,
+                          overflow: "hidden",
+                          background: "var(--card)",
+                        }}>
+                          {/* Header */}
+                          <div style={{
+                            padding: "12px 16px",
+                            background: headerColor === "var(--muted)" ? "var(--bg)" : `${headerColor}14`,
+                            borderBottom: `1px solid ${headerColor === "var(--muted)" ? "var(--border)" : `${headerColor}33`}`,
+                            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                          }}>
+                            <div style={{
+                              width: 36, height: 36, borderRadius: 10,
+                              background: headerColor === "var(--muted)" ? "var(--bg)" : headerColor,
+                              color: headerColor === "var(--muted)" ? "var(--muted)" : "#fff",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 14, fontWeight: 900,
+                            }}>
+                              {k === 99 ? "?" : k}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                {label}
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginTop: 1 }}>
+                                {mainCorte?.name || label}
+                              </div>
+                            </div>
+                            {headerPct != null && (
+                              <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 9, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>Acumulado</div>
+                                <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "var(--font-mono)", color: headerColor, lineHeight: 1 }}>
+                                  {(headerPct / 10).toFixed(1)}
+                                  <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginLeft: 2 }}>/10</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ padding: "12px 16px" }}>
+                            {/* Additional corte columns if there's more than one summary in this period */}
+                            {corteList.length > 1 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                                {corteList.filter((c) => c !== mainCorte).map((c, idx) => {
+                                  const col = c.scorePct != null ? colorForPct(c.scorePct, thresholds) : "var(--muted)";
+                                  return (
+                                    <span key={`c-${idx}`} style={{
+                                      fontSize: 11, fontWeight: 700,
+                                      padding: "4px 10px", borderRadius: 8,
+                                      background: `${col}15`,
+                                      border: `1px solid ${col}44`,
+                                      color: col,
+                                      display: "inline-flex", alignItems: "center", gap: 5,
+                                    }}>
+                                      {c.name}: <strong style={{ fontFamily: "var(--font-mono)" }}>
+                                        {c.scorePct != null ? (c.scorePct / 10).toFixed(1) : "—"}
+                                      </strong>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Evidences that belong to this corte */}
+                            {evList.length > 0 ? (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                                  Evidencias incluidas ({evList.length})
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  {evList.map((e, idx) => {
+                                    const col = e.scorePct != null ? colorForPct(e.scorePct, thresholds) : "var(--muted)";
+                                    const isGraded = e.scorePct != null;
+                                    return (
+                                      <div key={`ev-${idx}`} style={{
+                                        display: "flex", alignItems: "center", gap: 8,
+                                        padding: "6px 10px", borderRadius: 8,
+                                        background: "var(--bg)",
+                                        border: "1px solid var(--border)",
+                                        fontSize: 12,
+                                      }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: col, flexShrink: 0 }} />
+                                        <span style={{ flex: 1, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {e.name || `Ítem ${e.gradeObjectId}`}
+                                        </span>
+                                        {e.categoryName && (
+                                          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 10, background: "var(--brand-light)", color: "var(--brand)", fontWeight: 700 }}>
+                                            {e.categoryName}
+                                          </span>
+                                        )}
+                                        {e.weightPct > 0 && (
+                                          <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+                                            {Number(e.weightPct).toFixed(0)}%
+                                          </span>
+                                        )}
+                                        <span style={{
+                                          fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: 13,
+                                          color: col, minWidth: 34, textAlign: "right",
+                                        }}>
+                                          {isGraded ? (e.scorePct / 10).toFixed(1) : "—"}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", textAlign: "center", padding: "6px 0" }}>
+                                Sin evidencias individuales detectadas en este corte
+                              </div>
+                            )}
+
+                            {/* If the main corte item has a formula, show it */}
+                            {mainCorte?.formula && (
+                              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(99, 102, 241, 0.08)", border: "1px dashed rgba(99, 102, 241, 0.35)", fontSize: 11 }}>
+                                <div style={{ fontWeight: 800, color: "rgb(79, 70, 229)", marginBottom: 2 }}>
+                                  🧮 Fórmula del docente
+                                </div>
+                                <div style={{ fontFamily: "var(--font-mono)", color: "var(--muted)", lineHeight: 1.4, wordBreak: "break-word" }}>
+                                  {mainCorte.formula}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                          Corte {e.cortePeriod || (i + 1)}
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>
-                          {e.name || `Corte ${i + 1}`}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-                          <span style={{ fontSize: 32, fontWeight: 900, fontFamily: "var(--font-mono)", color: gradeColor, lineHeight: 1 }}>
-                            {e.scorePct != null ? (Number(e.scorePct) / 10).toFixed(1) : "—"}
-                          </span>
-                          <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>/10</span>
-                        </div>
-                        {!isGraded && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>Aún sin publicar</div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </Card>
           </div>
         )}

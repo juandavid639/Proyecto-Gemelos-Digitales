@@ -126,6 +126,19 @@ class BrightspaceClient:
         data = await self._request_json("GET", url)
         return self._as_list_of_dicts(data)
 
+    async def list_grade_categories(self, orgUnitId: int) -> List[Dict[str, Any]]:
+        """Fetch grade categories (Parcial 1, Quizzes, etc.) for a course.
+        Returns [] if the tenant doesn't expose them or on error."""
+        url = (
+            f"{self.base_url}/d2l/api/le/{self.grade_version}/{orgUnitId}"
+            f"/grades/categories/"
+        )
+        try:
+            data = await self._request_json("GET", url)
+            return self._as_list_of_dicts(data)
+        except Exception:
+            return []
+
     async def get_grade_value(
         self, orgUnitId: int, gradeObjectId: int, userId: int
     ) -> Dict[str, Any]:

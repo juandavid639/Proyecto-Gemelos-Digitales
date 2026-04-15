@@ -21,7 +21,7 @@ export default function RoleHome() {
     (async () => {
       setLoading(true);
       try {
-        const data = await apiGet("/brightspace/courses/enrolled?active_only=false&limit=200");
+        const data = await apiGet("/brightspace/courses/enrolled?active_only=false&limit=500");
         if (alive) setCourses(Array.isArray(data?.items) ? data.items : []);
       } catch {
         // fallback: try my-course-offerings
@@ -230,6 +230,22 @@ export default function RoleHome() {
             {!loading && search && filteredInst.length === 0 && filteredStud.length === 0 && (
               <div style={{ textAlign: "center", padding: "30px 20px", color: "var(--muted)" }}>
                 <div style={{ fontSize: 14, marginBottom: 8 }}>Sin resultados para "{search}"</div>
+                {/* Escape hatch: if the search looks like a numeric course ID, allow
+                    opening it directly. Useful for admins/coordinators who have
+                    access to courses that don't appear in their enrollment list. */}
+                {/^\d{3,}$/.test(search.trim()) && (
+                  <div style={{ marginBottom: 10, padding: "10px 12px", background: "var(--brand-light)", border: "1px solid var(--brand-light2, #D6E4FF)", borderRadius: 10, fontSize: 12, color: "var(--text)" }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+                      Parece que buscas por ID de curso. Si tienes permisos de acceso directo, puedes abrirlo:
+                    </div>
+                    <button
+                      onClick={() => handleSelectCourse(parseInt(search.trim(), 10), isStudent && !isInstructor ? "student" : "instructor")}
+                      style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginRight: 6 }}
+                    >
+                      🔗 Abrir curso #{search.trim()} →
+                    </button>
+                  </div>
+                )}
                 <button onClick={() => setSearch("")} style={{ background: "var(--brand)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   Limpiar búsqueda
                 </button>

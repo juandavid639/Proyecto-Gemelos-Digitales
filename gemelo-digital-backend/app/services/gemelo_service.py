@@ -1586,6 +1586,24 @@ class GemeloService:
             if not isinstance(raw_items, list):
                 return {}
 
+            # Fetch grade categories in parallel so we can attach category names
+            # to evidences. Safe fallback if the endpoint is missing/forbidden.
+            categories_by_id: Dict[str, str] = {}
+            list_cats_fn = getattr(self.bs, "list_grade_categories", None)
+            if callable(list_cats_fn):
+                try:
+                    raw_cats = await list_cats_fn(orgUnitId)
+                    if isinstance(raw_cats, dict):
+                        raw_cats = raw_cats.get("Items") or raw_cats.get("items") or []
+                    for c in (raw_cats or []):
+                        if isinstance(c, dict):
+                            cid = c.get("Id") or c.get("CategoryId")
+                            nm = c.get("Name") or c.get("name")
+                            if cid is not None and nm:
+                                categories_by_id[str(cid)] = nm
+                except Exception:
+                    categories_by_id = {}
+
             course_dict = _as_dict(course_cfg)
             gp = (
                 course_dict.get("gradingPolicy", {})
@@ -1781,6 +1799,34 @@ class GemeloService:
                         except Exception:
                             linked_dropbox_id = None
 
+                    # Extract category + formula metadata. Brightspace exposes:
+                    #   CategoryId          - numeric id (or null if uncategorized)
+                    #   Category.Name       - when the grade item is nested under a
+                    #                         category on certain API versions
+                    #   GradeType           - "Numeric", "Formula", "Calculated",
+                    #                         "PassFail", "SelectBox", "Text"
+                    #   Formula / FormulaExpression / Expression - for Formula type
+                    _cat_obj = it.get("Category") if isinstance(it.get("Category"), dict) else None
+                    category_id = it.get("CategoryId")
+                    if category_id is None and _cat_obj is not None:
+                        category_id = _cat_obj.get("Id")
+                    category_name = None
+                    if _cat_obj is not None:
+                        category_name = _cat_obj.get("Name")
+                    if not category_name:
+                        category_name = it.get("CategoryName")
+                    # Fall back to the categories lookup we fetched above
+                    if not category_name and category_id is not None:
+                        category_name = categories_by_id.get(str(category_id))
+
+                    grade_type = it.get("GradeType") or ""
+                    formula_text = (
+                        it.get("Formula")
+                        or it.get("FormulaExpression")
+                        or it.get("Expression")
+                        or ""
+                    )
+
                     evidences.append(
                         {
                             "gradeObjectId": int(it.get("Id")),
@@ -1795,6 +1841,10 @@ class GemeloService:
                             "dueDate": due_dt.isoformat() if due_dt else None,
                             "lastModified": val.get("LastModified"),
                             "linkedDropboxId": linked_dropbox_id,
+                            "categoryId": category_id,
+                            "categoryName": category_name,
+                            "gradeType": grade_type,
+                            "formula": formula_text,
                         }
                     )
 

@@ -24,6 +24,7 @@ export default function CoordinatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("atRiskPct"); // atRiskPct | avgPct | name
+  const [yearFilter, setYearFilter] = useState("all");
   const [semesterFilter, setSemesterFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
@@ -152,20 +153,47 @@ export default function CoordinatorDashboard() {
     return words[0].toUpperCase();
   };
 
-  // Compute available semesters and categories (unique, sorted)
-  const { availableSemesters, availableCategories } = useMemo(() => {
+  // Helper: extract year from a course. Priority:
+  //  1) Course.startDate or creationDate (ISO) — truest source
+  //  2) Semester code (first 4 digits)
+  //  3) Name regex fallback (20XX)
+  const extractYear = (course) => {
+    // Explicit date fields
+    for (const k of ["startDate", "StartDate", "created", "creationDate", "CreatedDate"]) {
+      const v = course?.[k];
+      if (v) {
+        const d = new Date(v);
+        if (!Number.isNaN(d.getTime())) return String(d.getFullYear());
+      }
+    }
+    // Semester code
+    const sem = extractSemester(course);
+    if (sem) return sem.slice(0, 4);
+    // Regex in name/code
+    const hay = `${course?.name || ""} ${course?.code || ""}`;
+    const m = hay.match(/\b(20\d{2})\b/);
+    return m ? m[1] : null;
+  };
+
+  // Compute available years, semesters and categories (unique, sorted)
+  const { availableYears, availableSemesters, availableCategories } = useMemo(() => {
+    const years = new Set();
     const sems = new Set();
     const cats = new Set();
     for (const c of courses) {
+      const y = extractYear(c);
+      if (y) years.add(y);
       const s = extractSemester(c);
       if (s) sems.add(s);
       const cat = extractCategory(c);
       if (cat) cats.add(cat);
     }
     return {
-      availableSemesters: Array.from(sems).sort().reverse(), // newest first
+      availableYears: Array.from(years).sort().reverse(), // newest first
+      availableSemesters: Array.from(sems).sort().reverse(),
       availableCategories: Array.from(cats).sort(),
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courses]);
 
   // Label for semester code: "202510" → "2025-I", "202520" → "2025-II"
@@ -183,6 +211,12 @@ export default function CoordinatorDashboard() {
       // Search filter
       if (q && !(String(c.name || "").toLowerCase().includes(q) || String(c.code || "").toLowerCase().includes(q))) {
         return false;
+      }
+      // Year filter
+      if (yearFilter !== "all") {
+        const y = extractYear(c);
+        if (yearFilter === "_none" && y != null) return false;
+        if (yearFilter !== "_none" && y !== yearFilter) return false;
       }
       // Semester filter
       if (semesterFilter !== "all") {
@@ -211,7 +245,8 @@ export default function CoordinatorDashboard() {
       return 0;
     });
     return withMetrics;
-  }, [courses, courseMetrics, search, sortBy, semesterFilter, categoryFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses, courseMetrics, search, sortBy, yearFilter, semesterFilter, categoryFilter]);
 
   // Totals for the currently-filtered view
   const filteredTotals = useMemo(() => {
@@ -322,6 +357,30 @@ export default function CoordinatorDashboard() {
                 fontSize: 12, fontFamily: "var(--font)", outline: "none",
               }}
             />
+
+            {/* Year filter */}
+            {availableYears.length > 1 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
+                Año:
+                <select
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  aria-label="Filtrar por año"
+                  style={{
+                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                    background: "var(--card)", color: "var(--text)",
+                    fontSize: 12, fontFamily: "var(--font)", outline: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  <option value="all">Todos</option>
+                  {availableYears.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                  <option value="_none">Sin año</option>
+                </select>
+              </label>
+            )}
 
             {/* Semester filter */}
             {availableSemesters.length > 0 && (
