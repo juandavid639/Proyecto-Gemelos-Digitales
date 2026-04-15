@@ -208,17 +208,17 @@ export function parseFormulaReferences(formula) {
  */
 // Match a category/item name against the set of accepted "corte" labels
 // and return the period number (1..4) if it matches, else null. Patterns:
-//   - "Corte 1", "CORTE 2", "C1", "C 3"
+//   - "Corte 1", "CORTE 2"
 //   - "Primer corte", "Segundo corte", "Tercer corte", "Cuarto corte"
 //   - "Corte uno", "Corte dos", "Corte tres", "Corte cuatro"
-//   - "Primer/Segundo/... parcial"   (some courses phrase it this way)
+//
+// Intentionally does NOT match "C1"/"C2" because those conflict with
+// real category names like "C1 - Tareas" that aren't grading periods.
 export function detectCortePeriod(name) {
   if (!name) return null;
   const s = String(name).trim();
-  // Numeric: Corte 1, CORTE 2, C1, C 3
+  // Corte 1, CORTE 2, etc. Requires the word "corte" to be present.
   let m = s.match(/\b(?:CORTE|Corte)\s*([1-4])\b/i);
-  if (m) return parseInt(m[1], 10);
-  m = s.match(/\bC\s*([1-4])\b/);
   if (m) return parseInt(m[1], 10);
   // Ordinal: Primer/Segundo/Tercer/Cuarto corte
   const ordinalMap = { primer: 1, segundo: 2, tercer: 3, tercero: 3, cuarto: 4 };

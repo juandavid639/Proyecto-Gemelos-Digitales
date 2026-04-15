@@ -1125,12 +1125,12 @@ function matchEvidencesByFormula(corteItem, allEvidences) {
 }
 
 // Detect a Corte period from a name string. Returns 1..4 or null.
+// Intentionally requires the literal word "corte" to avoid matching
+// category prefixes like "C1 - Tareas" that aren't grading periods.
 function detectCortePeriod(name) {
   if (!name) return null;
   const s = String(name).trim();
   let m = s.match(/\b(?:CORTE|Corte)\s*([1-4])\b/i);
-  if (m) return parseInt(m[1], 10);
-  m = s.match(/\bC\s*([1-4])\b/);
   if (m) return parseInt(m[1], 10);
   const ordinalMap = { primer: 1, segundo: 2, tercer: 3, tercero: 3, cuarto: 4 };
   m = s.match(/\b(primer|segundo|tercer|tercero|cuarto)\s*corte\b/i);
