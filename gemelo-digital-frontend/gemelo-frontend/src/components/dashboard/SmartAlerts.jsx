@@ -10,19 +10,75 @@ import { computeRiskFromPct } from "../../utils/helpers";
  *  - WARNING: concerning patterns (e.g., coverage dropped)
  *  - INFO: positive signals or neutral info
  */
+// Map backend severity strings (critico/observacion/en desarrollo/solido)
+// to SmartAlerts severity levels (critical/warning/info).
+function normalizeBackendSeverity(s) {
+  const x = String(s || "").toLowerCase().trim();
+  if (x === "critico" || x === "crítico" || x === "critical") return "critical";
+  if (x === "solido" || x === "sólido" || x === "ok" || x === "info") return "info";
+  // observacion, en seguimiento, en desarrollo, warning → warning
+  return "warning";
+}
+
+// Convert a backend "Radar docente" alert (from overview.alerts) into the
+// same shape SmartAlerts uses internally.
+function normalizeBackendAlert(a) {
+  if (!a || typeof a !== "object") return null;
+  const severity = normalizeBackendSeverity(a.severity);
+  // Icons by content type
+  const icons = {
+    cobertura: "📊",
+    desempeno: "🎯",
+    riesgo: "🚨",
+    macro: "🧭",
+    ra: "🧩",
+    default: "🔭",
+  };
+  const t = String(a.title || a.id || "").toLowerCase();
+  let icon = icons.default;
+  if (t.includes("cobertura")) icon = icons.cobertura;
+  else if (t.includes("desempeño") || t.includes("desempeno") || t.includes("promedio")) icon = icons.desempeno;
+  else if (t.includes("riesgo")) icon = icons.riesgo;
+  else if (t.includes("macro") || t.includes("competencia")) icon = icons.macro;
+  else if (t.includes("ra") || t.includes("resultado") || t.includes("aprendiz")) icon = icons.ra;
+
+  return {
+    id: a.id || `backend-${a.title || Math.random()}`,
+    severity,
+    icon,
+    title: a.title || "Observación del curso",
+    message: a.message || "",
+    students: null,
+    kpis: a.kpis || null,
+    items: Array.isArray(a.items) ? a.items : null,
+    source: "radar",
+  };
+}
+
 export default function SmartAlerts({
   studentRows = [],
   overview = null,
   courseInfo = null,
   contentKpis = null,
+  backendAlerts = null,
   onStudentClick = () => {},
 }) {
   const alerts = useMemo(() => {
     const rows = Array.isArray(studentRows) ? studentRows : [];
     const loaded = rows.filter((s) => !s.isLoading);
-    if (loaded.length === 0) return [];
 
     const out = [];
+
+    // Merge backend "Radar docente" alerts first (course-structure level)
+    const backendList = Array.isArray(backendAlerts)
+      ? backendAlerts
+      : (Array.isArray(overview?.alerts) ? overview.alerts : []);
+    for (const b of backendList) {
+      const norm = normalizeBackendAlert(b);
+      if (norm) out.push(norm);
+    }
+
+    if (loaded.length === 0) return out;
 
     // 1. Students with failing grade (< 5.0)
     const failing = loaded.filter(
@@ -134,7 +190,7 @@ export default function SmartAlerts({
     out.sort((a, b) => (sevOrder[a.severity] ?? 99) - (sevOrder[b.severity] ?? 99));
 
     return out;
-  }, [studentRows, overview, contentKpis]);
+  }, [studentRows, overview, contentKpis, backendAlerts]);
 
   const [open, setOpen] = useState(false);
 
@@ -256,6 +312,40 @@ export default function SmartAlerts({
                         <span style={{ fontSize: 10, color: "var(--muted)", alignSelf: "center" }}>
                           +{alert.totalCount - alert.students.length} más
                         </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Backend "Radar docente" alerts: KPIs inline */}
+                  {alert.kpis && Object.keys(alert.kpis).length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {Object.entries(alert.kpis).map(([k, v]) => (
+                        <span
+                          key={k}
+                          style={{
+                            fontSize: 10,
+                            background: "var(--bg)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            padding: "2px 6px",
+                            fontFamily: "var(--font-mono)",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {k}: <strong style={{ color: "var(--text)" }}>
+                            {typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v)}
+                          </strong>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Items list (e.g., ítems sin RA) */}
+                  {alert.items && alert.items.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)" }}>
+                      {alert.items.slice(0, 5).map((it, idx) => (
+                        <div key={idx}>• {it.name || it.title || String(it)}</div>
+                      ))}
+                      {alert.items.length > 5 && (
+                        <div style={{ fontStyle: "italic" }}>+{alert.items.length - 5} más</div>
                       )}
                     </div>
                   )}

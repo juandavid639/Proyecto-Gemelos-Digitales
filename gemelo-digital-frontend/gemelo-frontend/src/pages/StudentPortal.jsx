@@ -23,6 +23,7 @@ import {
 } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
 import useMediaQuery from "../hooks/useMediaQuery";
+import DueDateCalendar from "../components/dashboard/DueDateCalendar";
 
 /* ── Helpers ── */
 
@@ -800,6 +801,18 @@ export default function StudentPortal() {
           </div>
         )}
 
+        {/* ── Calendario de entregas del curso ── */}
+        {orgUnitId ? (
+          <div style={{ marginBottom: 20 }}>
+            <Card title="📅 Mis próximas entregas">
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+                Aquí ves todas las entregas del curso organizadas por fecha. Pasa el cursor sobre una tarea para ver cuántos días te quedan y el rango completo de fechas disponible para entregar. Las entregas marcadas con <strong style={{ color: "#dc2626" }}>¡!</strong> vencen en menos de 2 días.
+              </div>
+              <DueDateCalendar orgUnitId={orgUnitId} />
+            </Card>
+          </div>
+        ) : null}
+
         {/* ── Proyección ── */}
         {projection && Array.isArray(projection.scenarios) && projection.scenarios.length > 0 && (
           <div style={{ marginBottom: 20 }}>
@@ -811,24 +824,51 @@ export default function StudentPortal() {
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Cobertura 100% — esta es tu nota definitiva.</div>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                  {projection.scenarios.map((s) => {
-                    const meta = {
-                      risk: { label: "Si baja", icon: "📉", cls: "scenario-risk" },
-                      base: { label: "Actual", icon: "📊", cls: "scenario-base" },
-                      improve: { label: "Si mejora", icon: "📈", cls: "scenario-improve" },
-                    }[s.id] || { label: s.id, icon: "📊", cls: "scenario-base" };
-                    return (
-                      <div key={s.id} className={`scenario-card ${meta.cls}`}>
-                        <div style={{ fontSize: 18 }}>{meta.icon}</div>
-                        <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>{meta.label}</div>
-                        <div style={{ fontSize: 24, fontWeight: 900, color: colorForPct(s.projectedFinalPct, thresholds) }}>
-                          {fmtGrade10FromPct(s.projectedFinalPct)}
+                <>
+                  {/* Explanation block */}
+                  <div style={{
+                    background: "var(--brand-light)",
+                    border: "1px solid var(--brand-light2, #D6E4FF)",
+                    borderRadius: 10,
+                    padding: "10px 14px",
+                    marginBottom: 12,
+                    fontSize: 12,
+                    color: "var(--text)",
+                    lineHeight: 1.5,
+                  }}>
+                    <div style={{ fontWeight: 800, color: "var(--brand)", marginBottom: 4 }}>
+                      💡 ¿Cómo se calcula esta proyección?
+                    </div>
+                    Tu nota final depende de lo que ya tienes calificado ({fmtPct(projection.coveragePct)}) y de cómo te vaya en lo que queda pendiente. Usamos 3 escenarios para darte una idea del rango:
+                    <ul style={{ margin: "6px 0 0 0", paddingLeft: 18, color: "var(--muted)" }}>
+                      <li><strong style={{ color: "#dc2626" }}>📉 Si baja:</strong> supone que el resto de evidencias las entregas con un desempeño inferior al actual — es tu "piso" si te relajas.</li>
+                      <li><strong style={{ color: "var(--brand)" }}>📊 Actual:</strong> supone que mantienes el mismo nivel que llevas hasta ahora en lo que falta.</li>
+                      <li><strong style={{ color: "var(--ok)" }}>📈 Si mejora:</strong> supone que das lo mejor en las evidencias pendientes — es tu "techo" si te esfuerzas más.</li>
+                    </ul>
+                    <div style={{ marginTop: 6, fontSize: 11, fontStyle: "italic", color: "var(--muted)" }}>
+                      Los tres valores cambian a medida que tus docentes califiquen más evidencias. Entre más se acerque la cobertura al 100%, más precisa será la proyección.
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                    {projection.scenarios.map((s) => {
+                      const meta = {
+                        risk: { label: "Si baja", icon: "📉", cls: "scenario-risk" },
+                        base: { label: "Actual", icon: "📊", cls: "scenario-base" },
+                        improve: { label: "Si mejora", icon: "📈", cls: "scenario-improve" },
+                      }[s.id] || { label: s.id, icon: "📊", cls: "scenario-base" };
+                      return (
+                        <div key={s.id} className={`scenario-card ${meta.cls}`}>
+                          <div style={{ fontSize: 18 }}>{meta.icon}</div>
+                          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>{meta.label}</div>
+                          <div style={{ fontSize: 24, fontWeight: 900, color: colorForPct(s.projectedFinalPct, thresholds) }}>
+                            {fmtGrade10FromPct(s.projectedFinalPct)}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </Card>
           </div>

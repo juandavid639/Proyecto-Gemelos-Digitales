@@ -5855,17 +5855,14 @@ const contentKpis = useMemo(() => {
           </div>
         </div>
 
-        <div className="fade-up fade-up-1" style={{ marginBottom: 12 }}>
-          <AlertsPanel alerts={overview?.alerts} />
-        </div>
-
-        {/* ── Alertas inteligentes (segunda sección de radar) ── */}
+        {/* ── Alertas inteligentes (fusiona Radar docente + heurísticas locales) ── */}
         <div className="fade-up fade-up-1" style={{ marginBottom: 16 }}>
           <SmartAlerts
             studentRows={studentRows}
             overview={overview}
             courseInfo={courseInfo}
             contentKpis={contentKpis}
+            backendAlerts={overview?.alerts}
             onStudentClick={selectStudentById}
           />
         </div>

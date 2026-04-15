@@ -609,35 +609,47 @@ function MonthGrid({ assignments, hoverId, onHoverChange }) {
         })}
       </div>
 
-      {/* Hover info footer */}
-      {hoverAssignment && (
-        <div style={{
-          marginTop: 10, padding: "8px 12px",
-          borderRadius: 8,
-          background: "rgba(11, 95, 255, 0.06)",
-          border: "1px solid rgba(11, 95, 255, 0.25)",
-          fontSize: 11,
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <span style={{ fontSize: 14 }}>📌</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 800, color: "var(--text)" }}>{hoverAssignment.name}</div>
-            <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 1 }}>
-              {hoverAssignment.start ? (
-                <>
-                  Disponible desde <strong style={{ color: "var(--brand)" }}>
-                    {hoverAssignment.start.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
-                  </strong>
-                  {" → "}
-                </>
-              ) : "Vence "}
-              <strong style={{ color: hoverAssignment.isUrgent ? "#dc2626" : "var(--brand)" }}>
-                {hoverAssignment.due.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
-              </strong>
+      {/* Fixed-height hover info footer — always rendered to avoid layout shift */}
+      <div style={{
+        marginTop: 10,
+        minHeight: 52,
+        padding: "8px 12px",
+        borderRadius: 8,
+        background: hoverAssignment ? "rgba(11, 95, 255, 0.06)" : "var(--bg)",
+        border: `1px solid ${hoverAssignment ? "rgba(11, 95, 255, 0.25)" : "var(--border)"}`,
+        fontSize: 11,
+        display: "flex", alignItems: "center", gap: 8,
+        transition: "background 0.15s, border-color 0.15s",
+      }}>
+        {hoverAssignment ? (
+          <>
+            <span style={{ fontSize: 14 }}>📌</span>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                fontWeight: 800, color: "var(--text)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{hoverAssignment.name}</div>
+              <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 1 }}>
+                {hoverAssignment.start ? (
+                  <>
+                    Disponible desde <strong style={{ color: "var(--brand)" }}>
+                      {hoverAssignment.start.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
+                    </strong>
+                    {" → "}
+                  </>
+                ) : "Vence "}
+                <strong style={{ color: hoverAssignment.isUrgent ? "#dc2626" : "var(--brand)" }}>
+                  {hoverAssignment.due.toLocaleDateString("es-CO", { day: "2-digit", month: "long", year: "numeric" })}
+                </strong>
+              </div>
             </div>
+          </>
+        ) : (
+          <div style={{ color: "var(--muted)", fontStyle: "italic", textAlign: "center", flex: 1, fontSize: 10 }}>
+            Pasa el cursor sobre una entrega para ver sus fechas
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
