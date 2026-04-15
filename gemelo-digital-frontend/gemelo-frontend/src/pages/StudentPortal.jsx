@@ -20,6 +20,7 @@ import {
   computeRiskFromPct,
   suggestRouteForStudent,
   flattenOutcomeDescriptions,
+  matchEvidencesByFormula,
 } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
 import useMediaQuery from "../hooks/useMediaQuery";
@@ -637,9 +638,8 @@ export default function StudentPortal() {
                 }
                 const sortedKeys = [...groups.keys()].sort((a, b) => a - b);
 
-                // For each corte, also find the non-corte evidences that
-                // belong to the same period (linked by cortePeriod OR by
-                // category matching the corte's name, as fallback)
+                // Fallback index: non-corte evidences that have an explicit
+                // cortePeriod (useful when names are like "Parcial 1 - corte 1")
                 const nonCorteByPeriod = new Map();
                 for (const e of nonCorteItems) {
                   const k = e.cortePeriod;
@@ -652,7 +652,24 @@ export default function StudentPortal() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     {sortedKeys.map((k) => {
                       const corteList = groups.get(k) || [];
-                      const evList = nonCorteByPeriod.get(k) || [];
+
+                      // Build the evidence list for this corte. Priority:
+                      //  1. PARSE THE FORMULA of any corte in this period —
+                      //     most reliable, works when evidences don't
+                      //     mention "corte" in their name.
+                      //  2. Fall back to non-corte items with cortePeriod=k.
+                      let evList = [];
+                      for (const c of corteList) {
+                        const fromFormula = matchEvidencesByFormula(c, nonCorteItems);
+                        for (const e of fromFormula) {
+                          if (!evList.find((x) => x.gradeObjectId === e.gradeObjectId)) {
+                            evList.push(e);
+                          }
+                        }
+                      }
+                      if (evList.length === 0) {
+                        evList = nonCorteByPeriod.get(k) || [];
+                      }
 
                       // Best overall score to color the header: pick the first
                       // graded corte for this period

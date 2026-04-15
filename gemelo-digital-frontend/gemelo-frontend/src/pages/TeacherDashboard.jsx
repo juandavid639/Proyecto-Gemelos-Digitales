@@ -1072,6 +1072,58 @@ function fmtGrade10FromPct(pct) {
   return (Number(pct) / 10).toFixed(1);
 }
 
+// Parse a Brightspace grade item formula to extract the evidence names it
+// references. Example: AVG{ [Actividad I-1 ...Puntos recibidos], ... }
+function parseFormulaReferences(formula) {
+  if (!formula || typeof formula !== "string") return [];
+  let decoded = formula;
+  try {
+    if (typeof document !== "undefined") {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = formula;
+      decoded = txt.value;
+    }
+  } catch {}
+  const re = /\[([^\]]+?)\.(?:Puntos recibidos|Points Received|Puntos Recibidos|Puntos|Points|Calificaci[óo]n|Grade|Score|Max Points|Puntaje)\]/gi;
+  const names = [];
+  let m;
+  while ((m = re.exec(decoded)) !== null) {
+    const name = m[1].trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  if (names.length === 0) {
+    const re2 = /\[([^\]]+?)\]/g;
+    while ((m = re2.exec(decoded)) !== null) {
+      const name = m[1].trim();
+      if (name && /[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(name) && !names.includes(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+// Match formula references against an evidence list.
+function matchEvidencesByFormula(corteItem, allEvidences) {
+  const refs = parseFormulaReferences(corteItem?.formula);
+  if (refs.length === 0) return [];
+  const list = Array.isArray(allEvidences) ? allEvidences : [];
+  const norm = (s) => String(s || "").toLowerCase().trim();
+  const out = [];
+  const seen = new Set();
+  for (const ref of refs) {
+    const r = norm(ref);
+    let hit = list.find((e) => norm(e.name) === r);
+    if (!hit) hit = list.find((e) => norm(e.name).startsWith(r));
+    if (!hit) hit = list.find((e) => norm(e.name).includes(r) || r.includes(norm(e.name)));
+    if (hit && !seen.has(hit.gradeObjectId)) {
+      out.push(hit);
+      seen.add(hit.gradeObjectId);
+    }
+  }
+  return out;
+}
+
 function flattenOutcomeDescriptions(payload) {
   const sets = payload?.outcomeSets;
   if (!Array.isArray(sets)) return [];
@@ -7183,7 +7235,20 @@ const contentKpis = useMemo(() => {
                               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                 {keys.map((k) => {
                                   const corteList = groups.get(k) || [];
-                                  const evList = nonCorteByPeriod.get(k) || [];
+                                  // Primary: parse formula and match by name
+                                  let evList = [];
+                                  for (const c of corteList) {
+                                    const fromFormula = matchEvidencesByFormula(c, drawerNonCorte);
+                                    for (const e of fromFormula) {
+                                      if (!evList.find((x) => x.gradeObjectId === e.gradeObjectId)) {
+                                        evList.push(e);
+                                      }
+                                    }
+                                  }
+                                  // Fallback: non-corte items with explicit cortePeriod=k
+                                  if (evList.length === 0) {
+                                    evList = nonCorteByPeriod.get(k) || [];
+                                  }
                                   const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
                                   const hPct = mainCorte?.scorePct;
                                   const hColor = hPct != null ? colorForPct(hPct, thresholds) : "var(--muted)";

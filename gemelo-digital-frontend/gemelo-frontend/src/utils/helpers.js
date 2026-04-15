@@ -137,3 +137,67 @@ export function contentRhythmStatus(progressRatio) {
   }
   return { status: "solido", color: COLORS.ok, bg: "var(--ok-bg)", label: "Óptimo" };
 }
+
+/**
+ * Parse a Brightspace grade item formula to extract the evidence names it
+ * references.
+ *
+ * Example:
+ *   AVG{ [Actividad I-1 - IA y Derechos de Autor.Puntos recibidos],
+ *        [Actividad I-2 - ¿Listos para lanzar un chatbot?.Puntos recibidos] }
+ *
+ * Returns: ["Actividad I-1 - IA y Derechos de Autor",
+ *           "Actividad I-2 - ¿Listos para lanzar un chatbot?"]
+ */
+export function parseFormulaReferences(formula) {
+  if (!formula || typeof formula !== "string") return [];
+  let decoded = formula;
+  try {
+    if (typeof document !== "undefined") {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = formula;
+      decoded = txt.value;
+    }
+  } catch {}
+  const re = /\[([^\]]+?)\.(?:Puntos recibidos|Points Received|Puntos Recibidos|Puntos|Points|Calificaci[óo]n|Grade|Score|Max Points|Puntaje)\]/gi;
+  const names = [];
+  let m;
+  while ((m = re.exec(decoded)) !== null) {
+    const name = m[1].trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  if (names.length === 0) {
+    const re2 = /\[([^\]]+?)\]/g;
+    while ((m = re2.exec(decoded)) !== null) {
+      const name = m[1].trim();
+      if (name && /[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(name) && !names.includes(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Given a formula-based corte item and the full evidence list, return the
+ * matching evidences referenced by the formula.
+ */
+export function matchEvidencesByFormula(corteItem, allEvidences) {
+  const refs = parseFormulaReferences(corteItem?.formula);
+  if (refs.length === 0) return [];
+  const list = Array.isArray(allEvidences) ? allEvidences : [];
+  const norm = (s) => String(s || "").toLowerCase().trim();
+  const out = [];
+  const seen = new Set();
+  for (const ref of refs) {
+    const r = norm(ref);
+    let hit = list.find((e) => norm(e.name) === r);
+    if (!hit) hit = list.find((e) => norm(e.name).startsWith(r));
+    if (!hit) hit = list.find((e) => norm(e.name).includes(r) || r.includes(norm(e.name)));
+    if (hit && !seen.has(hit.gradeObjectId)) {
+      out.push(hit);
+      seen.add(hit.gradeObjectId);
+    }
+  }
+  return out;
+}
