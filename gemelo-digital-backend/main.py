@@ -1237,18 +1237,58 @@ async def brightspace_dropbox_feedback(
     folder_name = folder_data.get("Name") or ""
     rubric_refs = (folder_data.get("Assessment") or {}).get("Rubrics") or []
 
-    # 3. For each rubric, fetch the assessment (per-criterion levels + comments)
+    # 3. For each rubric, fetch the assessment (per-criterion levels + comments).
+    # Brightspace has MANY variants of rubric endpoints depending on version
+    # and how the rubric is attached. We try several in parallel and merge
+    # whatever we get.
     rubrics_out: list[dict] = []
+
+    async def _try(url: str, params: dict | None = None):
+        try:
+            _, data = await _bs_get(url, headers, params or {})
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    # Feedback may already include embedded RubricAssessments (newer LE)
+    fb_rubric_assessments = (
+        fb_data.get("RubricAssessments")
+        or fb_data.get("rubricAssessments")
+        or []
+    )
+    fb_rubric_by_id: dict = {}
+    for ra in fb_rubric_assessments:
+        if isinstance(ra, dict):
+            rid = ra.get("RubricId") or ra.get("rubricId")
+            if rid is not None:
+                fb_rubric_by_id[str(rid)] = ra
+
     if rubric_refs:
         async def _fetch_rubric(rubric_ref: dict) -> dict | None:
             rubric_id = rubric_ref.get("RubricId")
             if rubric_id is None:
                 return None
-            # Rubric definition (for criterion names + level names)
-            rubric_def_url = (
-                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/rubrics/{rubric_id}"
-            )
-            # Assessment (what levels the teacher selected for this student)
+
+            # Try BOTH the LP and LE-scoped rubric endpoints for the definition.
+            # Course-scoped rubrics often require the LE path with orgUnitId.
+            urls_def = [
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/rubrics/{rubric_id}",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/rubrics/{rubric_id}",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/unstable/{org_unit_id}/rubrics/{rubric_id}",
+            ]
+            # Criteria & levels sub-endpoints (some tenants require these explicitly)
+            urls_crit = [
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/rubrics/{rubric_id}/criteria/",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/rubrics/{rubric_id}/criteria/",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/unstable/{org_unit_id}/rubrics/{rubric_id}/criteria/",
+            ]
+            urls_lvl = [
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/lp/{LP_VERSION}/rubrics/{rubric_id}/levels/",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}/{org_unit_id}/rubrics/{rubric_id}/levels/",
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/unstable/{org_unit_id}/rubrics/{rubric_id}/levels/",
+            ]
+
+            # Assessment (teacher's per-criterion selection)
             assessment_url = f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/unstable/{org_unit_id}/assessment"
             assess_params = {
                 "assessmentType": "Rubric",
@@ -1257,14 +1297,55 @@ async def brightspace_dropbox_feedback(
                 "rubricId":       str(rubric_id),
                 "userId":         str(user_id),
             }
-            (_, rubric_def), (_, assess_data) = await asyncio.gather(
-                _bs_get(rubric_def_url, headers),
-                _bs_get(assessment_url, headers, assess_params),
+            # Alternative assessment endpoint: LE dropbox rubric assessments
+            alt_assessment_url = (
+                f"{BRIGHTSPACE_BASE_URL}/d2l/api/le/{LE_VERSION}"
+                f"/{org_unit_id}/dropbox/folders/{folder_id}/rubrics/{rubric_id}/assessments/{user_id}"
             )
-            rubric_def = rubric_def if isinstance(rubric_def, dict) else {}
-            assess_data = assess_data if isinstance(assess_data, dict) else {}
 
-            # Extract criterion results from assessment
+            # Fetch everything in parallel
+            tasks = []
+            for u in urls_def: tasks.append(_try(u))
+            for u in urls_crit: tasks.append(_try(u))
+            for u in urls_lvl: tasks.append(_try(u))
+            tasks.append(_try(assessment_url, assess_params))
+            tasks.append(_try(alt_assessment_url))
+
+            results = await asyncio.gather(*tasks)
+            n = len(urls_def)
+            defs = results[0:n]
+            crits = results[n:n*2]
+            lvls = results[n*2:n*3]
+            assess_primary = results[n*3] if len(results) > n*3 else {}
+            assess_alt = results[n*3 + 1] if len(results) > n*3 + 1 else {}
+
+            # Pick the first non-empty definition
+            rubric_def = next((d for d in defs if d), {})
+            # Pick first non-empty criteria list (may be a list or dict with Items)
+            def _as_list(x):
+                if isinstance(x, list): return x
+                if isinstance(x, dict):
+                    return x.get("Items") or x.get("items") or []
+                return []
+            criteria_list = []
+            for c in crits:
+                lst = _as_list(c)
+                if lst: criteria_list = lst; break
+            if not criteria_list:
+                criteria_list = rubric_def.get("Criteria") or []
+            levels_list = []
+            for l in lvls:
+                lst = _as_list(l)
+                if lst: levels_list = lst; break
+            if not levels_list:
+                levels_list = rubric_def.get("Levels") or []
+
+            # Assessment data: prefer embedded in feedback, then alt, then primary
+            assess_data = fb_rubric_by_id.get(str(rubric_id)) or {}
+            if not assess_data:
+                assess_data = assess_alt or assess_primary or {}
+
+            # Extract criterion results
             crit_results_raw = (
                 assess_data.get("CriteriaResults")
                 or assess_data.get("criteriaResults")
@@ -1277,47 +1358,104 @@ async def brightspace_dropbox_feedback(
                 cid = cr.get("CriterionId") or cr.get("criterionId")
                 if cid is None:
                     continue
+                # level info: LevelAssessed (object) or LevelId (int)
+                level_assessed = cr.get("LevelAssessed") or cr.get("levelAssessed") or {}
+                level_id = None
+                level_name_from_assess = ""
+                if isinstance(level_assessed, dict):
+                    level_id = level_assessed.get("Id") or level_assessed.get("LevelId")
+                    level_name_from_assess = level_assessed.get("Name") or ""
+                if level_id is None:
+                    level_id = cr.get("LevelId") or cr.get("levelId")
+                fb_obj_cr = cr.get("Feedback") or {}
+                fb_text = ""
+                if isinstance(fb_obj_cr, dict):
+                    fb_text = fb_obj_cr.get("Html") or fb_obj_cr.get("Text") or ""
+                points = (
+                    cr.get("Score")
+                    or cr.get("score")
+                    or cr.get("PointsAssessed")
+                    or cr.get("pointsAssessed")
+                )
                 crit_map[str(cid)] = {
-                    "levelId":  cr.get("LevelId") or cr.get("levelId"),
-                    "score":    cr.get("Score")   or cr.get("score"),
-                    "feedback": (cr.get("Feedback") or {}).get("Text")
-                                or (cr.get("Feedback") or {}).get("Html")
-                                or cr.get("feedback") or "",
+                    "levelId":        level_id,
+                    "levelNameInline": level_name_from_assess,
+                    "score":          points,
+                    "feedback":       fb_text,
                 }
 
-            # Build a lookup of level name by id across the rubric
+            # Build levels lookup
             levels_by_id: dict = {}
-            for lvl in (rubric_def.get("Levels") or []):
+            for lvl in levels_list:
                 if isinstance(lvl, dict):
-                    lid = lvl.get("Id")
+                    lid = lvl.get("Id") or lvl.get("LevelId")
                     if lid is not None:
                         levels_by_id[str(lid)] = lvl.get("Name") or ""
 
             criteria_out = []
-            for c in (rubric_def.get("Criteria") or []):
+            for c in criteria_list:
                 if not isinstance(c, dict):
                     continue
-                cid = c.get("Id")
+                cid = c.get("Id") or c.get("CriterionId")
                 result = crit_map.get(str(cid)) if cid is not None else None
                 level_name = ""
-                if result and result.get("levelId") is not None:
-                    level_name = levels_by_id.get(str(result["levelId"]), "")
+                if result:
+                    level_name = result.get("levelNameInline") or ""
+                    if not level_name and result.get("levelId") is not None:
+                        level_name = levels_by_id.get(str(result["levelId"]), "")
                 criteria_out.append({
                     "id":       cid,
-                    "name":     c.get("Name") or "",
+                    "name":     c.get("Name") or c.get("CriterionName") or "",
                     "level":    level_name,
                     "points":   (result or {}).get("score"),
                     "comment":  (result or {}).get("feedback") or "",
                 })
 
-            overall = assess_data.get("OverallLevel") or {}
+            # If we still have no criteria, fall back to the raw criterion results
+            # (only shows IDs + levels/comments, but better than an empty state).
+            if not criteria_out and crit_map:
+                for cid, r in crit_map.items():
+                    criteria_out.append({
+                        "id":      cid,
+                        "name":    f"Criterio {cid}",
+                        "level":   r.get("levelNameInline") or levels_by_id.get(str(r.get("levelId")), ""),
+                        "points":  r.get("score"),
+                        "comment": r.get("feedback") or "",
+                    })
+
+            # Overall level (from assessment)
+            overall = (
+                assess_data.get("OverallLevel")
+                or assess_data.get("Level")
+                or {}
+            )
+            overall_name = ""
+            if isinstance(overall, dict):
+                overall_name = overall.get("Name") or overall.get("name") or ""
+
+            # Overall comment (on the rubric itself, not per-criterion)
+            overall_comment_obj = assess_data.get("Comment") or {}
+            overall_comment = ""
+            if isinstance(overall_comment_obj, dict):
+                overall_comment = overall_comment_obj.get("Html") or overall_comment_obj.get("Text") or ""
+
             return {
-                "rubricId":   rubric_id,
-                "name":       rubric_def.get("Name") or rubric_ref.get("Name") or "",
-                "outOf":      rubric_def.get("MaxPoints") or rubric_def.get("OutOf"),
-                "score":      assess_data.get("Score") or assess_data.get("score"),
-                "level":      overall.get("Name") or overall.get("name") or "",
-                "criteria":   criteria_out,
+                "rubricId":       rubric_id,
+                "name":           rubric_def.get("Name") or rubric_ref.get("Name") or "",
+                "outOf":          rubric_def.get("MaxPoints") or rubric_def.get("OutOf"),
+                "score":          assess_data.get("Score") or assess_data.get("score"),
+                "level":          overall_name,
+                "overallComment": overall_comment,
+                "criteria":       criteria_out,
+                # For debugging; frontend ignores unless dev-mode
+                "_debug": {
+                    "defKeys":      list(rubric_def.keys()) if isinstance(rubric_def, dict) else [],
+                    "critCount":    len(criteria_list),
+                    "lvlCount":     len(levels_list),
+                    "assessSource": "feedback-embedded" if fb_rubric_by_id.get(str(rubric_id))
+                                    else ("alt-le" if assess_alt else "unstable"),
+                    "critResults":  len(crit_results_raw),
+                },
             }
 
         fetched = await asyncio.gather(*[_fetch_rubric(r) for r in rubric_refs])

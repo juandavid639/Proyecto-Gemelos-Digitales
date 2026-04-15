@@ -2,11 +2,14 @@ import React, { useMemo, useState, useEffect } from "react";
 import { apiGet } from "../../utils/api";
 
 /**
- * Workload heatmap / due date calendar.
+ * Per-assignment upcoming delivery list.
  *
- * Fetches grade items directly from the course (NOT from per-student gemelos).
- * This way the calendar shows ALL course assignments, not just those of
- * students whose drawer has been opened.
+ * Shows every assignment with a due date individually (not grouped), sorted
+ * chronologically. Each item has:
+ *   - Blue chip with abbreviated date
+ *   - Assignment name
+ *   - Hover tooltip showing exact time remaining
+ *   - ⚠ alarm icon if the deadline is within 2 days
  *
  * Props:
  *   orgUnitId: course id
@@ -36,69 +39,68 @@ export default function DueDateCalendar({ orgUnitId }) {
     return () => { alive = false; };
   }, [orgUnitId]);
 
-  // Aggregate by date
-  const dueDates = useMemo(() => {
-    const map = new Map();
-
+  // Extract each assignment individually (not grouped by date)
+  const assignments = useMemo(() => {
+    const now = new Date();
+    const list = [];
     for (const it of items) {
       if (!it?.dueDate) continue;
-      try {
-        const d = new Date(it.dueDate);
-        if (Number.isNaN(d.getTime())) continue;
-        const key = d.toISOString().slice(0, 10);
-        if (!map.has(key)) {
-          map.set(key, {
-            date: key,
-            items: [],
-            totalWeight: 0,
-          });
-        }
-        const entry = map.get(key);
-        entry.items.push(it.name || `Ítem ${it.id}`);
-        entry.totalWeight += Number(it.weightPct || 0);
-      } catch {}
+      const d = new Date(it.dueDate);
+      if (Number.isNaN(d.getTime())) continue;
+      const msDiff = d - now;
+      const daysUntil = Math.floor(msDiff / 86400000);
+      const hoursUntil = Math.floor(msDiff / 3600000);
+      list.push({
+        id: it.id,
+        name: it.name || `Ítem ${it.id}`,
+        weightPct: Number(it.weightPct || 0),
+        due: d,
+        dueIso: it.dueDate,
+        msDiff,
+        daysUntil,
+        hoursUntil,
+        isPast: msDiff < 0,
+        isUrgent: msDiff >= 0 && daysUntil <= 2,
+        source: it.source,
+      });
     }
-
-    return Array.from(map.values())
-      .map((e) => ({ ...e, itemCount: e.items.length }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    list.sort((a, b) => a.due - b.due);
+    return list;
   }, [items]);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().slice(0, 10);
+  const upcoming = useMemo(() => assignments.filter((a) => !a.isPast), [assignments]);
+  const recent = useMemo(
+    () => assignments.filter((a) => a.isPast).slice(-3).reverse(),
+    [assignments]
+  );
 
-  // Group by week for heatmap display
-  const weeks = useMemo(() => {
-    if (dueDates.length === 0) return [];
-    const byWeek = {};
-    for (const d of dueDates) {
-      const date = new Date(d.date);
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay()); // Sunday
-      const key = weekStart.toISOString().slice(0, 10);
-      if (!byWeek[key]) byWeek[key] = { weekStart: key, days: [], totalItems: 0 };
-      byWeek[key].days.push(d);
-      byWeek[key].totalItems += d.itemCount;
+  const formatRemaining = (a) => {
+    if (a.isPast) {
+      const daysAgo = Math.abs(a.daysUntil);
+      if (daysAgo === 0) return "Venció hoy";
+      if (daysAgo === 1) return "Venció ayer";
+      return `Venció hace ${daysAgo} días`;
     }
-    return Object.values(byWeek).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-  }, [dueDates]);
+    if (a.daysUntil === 0) {
+      if (a.hoursUntil <= 1) return "Vence en menos de 1 hora";
+      return `Vence hoy en ${a.hoursUntil}h`;
+    }
+    if (a.daysUntil === 1) return "Vence mañana";
+    if (a.daysUntil <= 7) return `Vence en ${a.daysUntil} días`;
+    if (a.daysUntil <= 30) return `Vence en ${Math.round(a.daysUntil / 7)} semana(s)`;
+    return `Vence en ${a.daysUntil} días`;
+  };
 
-  // Upcoming items (next 60 days)
-  const upcoming = useMemo(() => {
-    const in60 = new Date();
-    in60.setDate(in60.getDate() + 60);
-    const upTo = in60.toISOString().slice(0, 10);
-    return dueDates.filter((d) => d.date >= todayStr && d.date <= upTo);
-  }, [dueDates, todayStr]);
-
-  // Recently passed (last 30 days)
-  const recent = useMemo(() => {
-    const ago30 = new Date();
-    ago30.setDate(ago30.getDate() - 30);
-    const fromStr = ago30.toISOString().slice(0, 10);
-    return dueDates.filter((d) => d.date >= fromStr && d.date < todayStr).slice(-5);
-  }, [dueDates, todayStr]);
+  const formatExactDate = (a) => {
+    return a.due.toLocaleDateString("es-CO", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   if (loading) {
     return (
@@ -117,7 +119,7 @@ export default function DueDateCalendar({ orgUnitId }) {
     );
   }
 
-  if (dueDates.length === 0) {
+  if (assignments.length === 0) {
     return (
       <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--muted)" }}>
         <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 8 }}>📅</div>
@@ -127,140 +129,152 @@ export default function DueDateCalendar({ orgUnitId }) {
         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
           {items.length === 0
             ? "El curso no tiene ítems calificables aún."
-            : `${items.length} ítems del gradebook, pero ninguno tiene fecha de entrega configurada en Brightspace.`}
+            : `${items.length} ítems del gradebook, pero ninguno tiene fecha configurada.`}
         </div>
       </div>
     );
   }
 
-  const maxItemsPerWeek = Math.max(...weeks.map((w) => w.totalItems), 1);
+  const renderItem = (a, past = false) => {
+    const dateObj = a.due;
+    const weekday = dateObj.toLocaleDateString("es-CO", { weekday: "short" });
+    const day = dateObj.toLocaleDateString("es-CO", { day: "2-digit" });
+    const month = dateObj.toLocaleDateString("es-CO", { month: "short" });
+    const chipColor = past ? "#94a3b8" : (a.isUrgent ? "#dc2626" : "#0b5fff");
+    const chipBg = past
+      ? "rgba(148, 163, 184, 0.10)"
+      : (a.isUrgent ? "rgba(220, 38, 38, 0.08)" : "rgba(11, 95, 255, 0.06)");
+    const chipBorder = past
+      ? "rgba(148, 163, 184, 0.30)"
+      : (a.isUrgent ? "rgba(220, 38, 38, 0.35)" : "rgba(11, 95, 255, 0.25)");
+
+    const tooltip = `${formatRemaining(a)} · ${formatExactDate(a)}`;
+
+    return (
+      <div
+        key={`${a.id}-${a.dueIso}`}
+        title={tooltip}
+        style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: `1px solid ${chipBorder}`,
+          background: chipBg,
+          cursor: "help",
+          transition: "transform 0.15s, box-shadow 0.15s",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 4px 12px rgba(11, 95, 255, 0.12)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "";
+          e.currentTarget.style.boxShadow = "";
+        }}
+      >
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center",
+          minWidth: 46, padding: "6px 8px", borderRadius: 8,
+          background: chipColor,
+          color: "#fff",
+          flexShrink: 0,
+        }}>
+          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", opacity: 0.9 }}>{weekday}</div>
+          <div style={{ fontSize: 15, fontWeight: 900, lineHeight: 1 }}>{day}</div>
+          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", opacity: 0.9 }}>{month}</div>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6,
+            fontSize: 12, fontWeight: 700, color: "var(--text)",
+          }}>
+            {a.isUrgent && (
+              <span
+                title="¡Atención! Esta entrega vence pronto"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 18, height: 18, borderRadius: "50%",
+                  background: "#dc2626",
+                  color: "#fff", fontSize: 11, fontWeight: 900,
+                  flexShrink: 0,
+                  animation: "pulse-alert 1.4s ease-in-out infinite",
+                }}
+              >!</span>
+            )}
+            <span style={{
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{a.name}</span>
+          </div>
+          <div style={{ fontSize: 10, color: past ? "var(--muted)" : chipColor, marginTop: 2, fontWeight: 600 }}>
+            {formatRemaining(a)}
+          </div>
+        </div>
+
+        {a.weightPct > 0 && (
+          <span className="tag" style={{
+            flexShrink: 0, fontSize: 10, fontWeight: 700,
+            background: past ? "var(--bg)" : "rgba(11, 95, 255, 0.10)",
+            color: past ? "var(--muted)" : "#0b5fff",
+          }}>
+            {a.weightPct.toFixed(0)}%
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Upcoming entregables list */}
+      <style>{`
+        @keyframes pulse-alert {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
+          50% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
+        }
+      `}</style>
+
       {upcoming.length > 0 ? (
         <div>
-          <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-            Próximas entregas ({upcoming.length})
+          <div style={{
+            fontSize: 11, color: "var(--muted)", fontWeight: 800,
+            textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span>📅 Próximas entregas ({upcoming.length})</span>
+            {upcoming.some((a) => a.isUrgent) && (
+              <span style={{
+                fontSize: 10, color: "#dc2626", fontWeight: 800,
+                padding: "2px 6px", borderRadius: 10,
+                background: "rgba(220, 38, 38, 0.08)",
+                border: "1px solid rgba(220, 38, 38, 0.25)",
+              }}>
+                ⚠ {upcoming.filter((a) => a.isUrgent).length} urgente(s)
+              </span>
+            )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
-            {upcoming.map((d) => {
-              const dateObj = new Date(d.date);
-              const weekday = dateObj.toLocaleDateString("es-CO", { weekday: "short" });
-              const daystr = dateObj.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
-              const isHeavy = d.itemCount >= 3;
-              const daysUntil = Math.ceil((dateObj - today) / 86400000);
-              return (
-                <div key={d.date} style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: `1px solid ${isHeavy ? "var(--watch-border)" : "var(--border)"}`,
-                  background: isHeavy ? "var(--watch-bg)" : "var(--bg)",
-                }}>
-                  <div style={{
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    minWidth: 52, padding: "5px 8px", borderRadius: 8,
-                    background: isHeavy ? "var(--watch)" : "var(--brand)",
-                    color: "#fff",
-                  }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{weekday}</div>
-                    <div style={{ fontSize: 12, fontWeight: 900 }}>{daystr}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
-                      {d.itemCount} {d.itemCount === 1 ? "entrega" : "entregas"}
-                      {isHeavy && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--watch)", fontWeight: 800 }}>⚠ SOBRECARGA</span>}
-                      {daysUntil <= 3 && daysUntil >= 0 && (
-                        <span style={{ marginLeft: 8, fontSize: 10, color: "var(--critical)", fontWeight: 800 }}>
-                          {daysUntil === 0 ? "HOY" : `En ${daysUntil}d`}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>
-                      {d.items.slice(0, 3).join(" · ")}
-                      {d.items.length > 3 ? ` … (+${d.items.length - 3})` : ""}
-                    </div>
-                  </div>
-                  {d.totalWeight > 0 && (
-                    <span className="tag" style={{ flexShrink: 0 }}>
-                      {d.totalWeight.toFixed(0)}% peso
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+            {upcoming.map((a) => renderItem(a, false))}
           </div>
         </div>
       ) : (
         <div style={{ padding: "16px 12px", textAlign: "center", color: "var(--muted)", fontSize: 12, background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
-          ✓ Sin entregas pendientes en los próximos 60 días
+          ✓ Sin entregas pendientes
         </div>
       )}
 
-      {/* Recently passed (info) */}
       {recent.length > 0 && (
         <div>
           <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Recientes (últimos 30 días)
+            Vencidas recientemente
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {recent.map(d => {
-              const dateObj = new Date(d.date);
-              return (
-                <div key={`recent-${d.date}`} style={{
-                  display: "flex", justifyContent: "space-between",
-                  fontSize: 11, color: "var(--muted)",
-                  padding: "4px 8px", borderRadius: 6, background: "var(--bg)",
-                }}>
-                  <span>{dateObj.toLocaleDateString("es-CO", { day: "2-digit", month: "short" })}</span>
-                  <span>{d.itemCount} {d.itemCount === 1 ? "ítem" : "ítems"}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Heatmap by week */}
-      {weeks.length > 1 && (
-        <div>
-          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Heatmap semanal de carga
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {weeks.map((w) => {
-              const intensity = Math.min(1, w.totalItems / (maxItemsPerWeek + 1));
-              const isPast = w.weekStart < todayStr;
-              return (
-                <div
-                  key={w.weekStart}
-                  title={`Semana del ${w.weekStart}: ${w.totalItems} entrega${w.totalItems !== 1 ? "s" : ""}`}
-                  style={{
-                    width: 24, height: 24, borderRadius: 4,
-                    background: isPast
-                      ? `rgba(148, 163, 184, ${0.12 + intensity * 0.4})`
-                      : `rgba(11, 95, 255, ${0.15 + intensity * 0.7})`,
-                    border: "1px solid var(--border)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, fontWeight: 800,
-                    color: intensity > 0.5 ? "#fff" : "var(--muted)",
-                    cursor: "help",
-                  }}
-                >
-                  {w.totalItems}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 6, fontStyle: "italic" }}>
-            Cada casilla = 1 semana. Color más intenso = más entregas concentradas.
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {recent.map((a) => renderItem(a, true))}
           </div>
         </div>
       )}
 
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", borderTop: "1px solid var(--border)", paddingTop: 8 }}>
-        {items.length} ítems del gradebook · {dueDates.length} con fecha
+        {items.length} ítems del curso · {assignments.length} con fecha de entrega
       </div>
     </div>
   );

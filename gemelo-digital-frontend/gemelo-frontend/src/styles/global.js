@@ -223,6 +223,26 @@ const GLOBAL_STYLES = `
     tr { page-break-inside: avoid; }
     thead { display: table-header-group; }
 
+    /* Feedback modal print: hide everything except the modal body */
+    body.print-feedback-modal > *:not(.feedback-print-root) { display: none !important; }
+    body.print-feedback-modal .feedback-print-root {
+      position: static !important;
+      inset: auto !important;
+      background: #fff !important;
+      backdrop-filter: none !important;
+      padding: 0 !important;
+      display: block !important;
+    }
+    body.print-feedback-modal .feedback-print-card {
+      position: static !important;
+      max-width: 100% !important;
+      max-height: none !important;
+      overflow: visible !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    body.print-feedback-modal .feedback-print-root button { display: none !important; }
+
     .print-only { display: block !important; }
   }
   .print-only { display: none; }

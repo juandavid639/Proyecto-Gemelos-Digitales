@@ -354,6 +354,7 @@ export default function EvidenceReports({
 
       {feedbackModal && (
         <div
+          className="feedback-print-root"
           onClick={() => setFeedbackModal(null)}
           style={{
             position: "fixed", inset: 0, zIndex: 1000,
@@ -364,6 +365,7 @@ export default function EvidenceReports({
           }}
         >
           <div
+            className="feedback-print-card"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "var(--card)",
@@ -391,6 +393,24 @@ export default function EvidenceReports({
                   {feedbackModal.studentName}
                 </div>
               </div>
+              <button
+                onClick={() => {
+                  // Print only the modal body: add a class to body, print, then remove
+                  document.body.classList.add("print-feedback-modal");
+                  setTimeout(() => {
+                    window.print();
+                    setTimeout(() => document.body.classList.remove("print-feedback-modal"), 500);
+                  }, 100);
+                }}
+                title="Imprimir / Guardar como PDF"
+                style={{
+                  background: "var(--brand-light)", border: "1px solid var(--brand-light2, #D6E4FF)",
+                  color: "var(--brand)", borderRadius: 8,
+                  fontSize: 11, fontWeight: 700,
+                  padding: "6px 10px", cursor: "pointer",
+                  fontFamily: "var(--font)",
+                }}
+              >🖨 Imprimir</button>
               <button
                 onClick={() => setFeedbackModal(null)}
                 style={{
