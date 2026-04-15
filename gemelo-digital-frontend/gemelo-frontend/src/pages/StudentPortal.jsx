@@ -168,6 +168,31 @@ export default function StudentPortal() {
     setOrgUnitId(Number(courseId));
   };
 
+  // If AuthContext provides initialOrgUnitId AFTER this component mounts
+  // (e.g. during a slow auth check on page reload), apply it as soon as
+  // it's available.
+  useEffect(() => {
+    if (initialOrgUnitId && Number(initialOrgUnitId) > 0 && !orgUnitId) {
+      setOrgUnitId(Number(initialOrgUnitId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialOrgUnitId]);
+
+  // If we still don't have an orgUnitId after auth has finished loading and
+  // there's nothing in sessionStorage, send the user to the course picker
+  // instead of showing the empty "accede desde Brightspace" state.
+  useEffect(() => {
+    if (authUser && !orgUnitId && !initialOrgUnitId) {
+      const saved = sessionStorage.getItem("gemelo_pending_org");
+      if (!saved || Number(saved) <= 0) {
+        // Small delay so we don't fight the initial mount race
+        const t = setTimeout(() => navigate("/", { replace: true }), 80);
+        return () => clearTimeout(t);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, orgUnitId, initialOrgUnitId]);
+
   const handleGoHome = () => {
     if (isDualRole) {
       navigate("/");

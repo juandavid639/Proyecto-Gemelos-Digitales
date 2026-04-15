@@ -1124,6 +1124,23 @@ function matchEvidencesByFormula(corteItem, allEvidences) {
   return out;
 }
 
+// Detect a Corte period from a name string. Returns 1..4 or null.
+function detectCortePeriod(name) {
+  if (!name) return null;
+  const s = String(name).trim();
+  let m = s.match(/\b(?:CORTE|Corte)\s*([1-4])\b/i);
+  if (m) return parseInt(m[1], 10);
+  m = s.match(/\bC\s*([1-4])\b/);
+  if (m) return parseInt(m[1], 10);
+  const ordinalMap = { primer: 1, segundo: 2, tercer: 3, tercero: 3, cuarto: 4 };
+  m = s.match(/\b(primer|segundo|tercer|tercero|cuarto)\s*corte\b/i);
+  if (m) return ordinalMap[m[1].toLowerCase()];
+  const wordMap = { uno: 1, dos: 2, tres: 3, cuatro: 4 };
+  m = s.match(/\bcorte\s*(uno|dos|tres|cuatro)\b/i);
+  if (m) return wordMap[m[1].toLowerCase()];
+  return null;
+}
+
 // Build corte groups preferring gradeCategories (from backend) over formula
 // parsing. See utils/helpers.js for full documentation.
 function buildCorteGroups(evidences, gradeCategories) {
@@ -1137,18 +1154,15 @@ function buildCorteGroups(evidences, gradeCategories) {
     const byId = new Map();
     for (const e of list) byId.set(String(e.gradeObjectId), e);
     for (const cat of cats) {
+      const period = detectCortePeriod(cat?.name);
+      if (period == null) continue;   // only surface "Corte N" categories
       const ids = Array.isArray(cat?.itemIds) ? cat.itemIds : [];
       const itemsInCat = ids.map((id) => byId.get(String(id))).filter(Boolean);
       if (itemsInCat.length === 0) continue;
       const aggregates = itemsInCat.filter((e) => e.isCorte === true || String(e.gradeType || "").toLowerCase() === "formula");
       const components = itemsInCat.filter((e) => e.isCorte !== true && String(e.gradeType || "").toLowerCase() !== "formula");
       if (aggregates.length === 0 && components.length === 0) continue;
-      let period = null;
-      const nm = String(cat?.name || "");
-      const m = nm.match(/\b(?:CORTE|Corte|C)\s*([1-4])\b/);
-      if (m) period = parseInt(m[1], 10);
-      if (period == null && aggregates.length > 0 && aggregates[0].cortePeriod) period = aggregates[0].cortePeriod;
-      groups.push({ id: `cat-${cat.id}`, name: cat.name || "Sin nombre", period, aggregates, components });
+      groups.push({ id: `cat-${cat.id}`, name: cat.name || `Corte ${period}`, period, aggregates, components });
     }
     if (groups.length > 0) {
       groups.sort((a, b) => {

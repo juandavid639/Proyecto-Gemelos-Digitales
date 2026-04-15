@@ -120,7 +120,11 @@ export function AuthProvider({ children }) {
 
           const savedOu = sessionStorage.getItem("gemelo_pending_org");
           if (savedOu && Number(savedOu) > 0) {
-            sessionStorage.removeItem("gemelo_pending_org");
+            // NOTE: Don't remove the key — we need it to survive page
+            // reloads (F5). Lazy-loaded pages (StudentPortal/TeacherDashboard)
+            // may mount AFTER this effect runs, and their useState
+            // initializers read sessionStorage directly. If we delete it
+            // here, a hard refresh loses the course selection.
             setInitialOrgUnitId(Number(savedOu));
           }
 

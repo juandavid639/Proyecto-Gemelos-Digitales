@@ -206,6 +206,31 @@ export function parseFormulaReferences(formula) {
  *      showing an empty group (pattern common when course uses a Formula
  *      item that Brightspace doesn't expose the formula text for).
  */
+// Match a category/item name against the set of accepted "corte" labels
+// and return the period number (1..4) if it matches, else null. Patterns:
+//   - "Corte 1", "CORTE 2", "C1", "C 3"
+//   - "Primer corte", "Segundo corte", "Tercer corte", "Cuarto corte"
+//   - "Corte uno", "Corte dos", "Corte tres", "Corte cuatro"
+//   - "Primer/Segundo/... parcial"   (some courses phrase it this way)
+export function detectCortePeriod(name) {
+  if (!name) return null;
+  const s = String(name).trim();
+  // Numeric: Corte 1, CORTE 2, C1, C 3
+  let m = s.match(/\b(?:CORTE|Corte)\s*([1-4])\b/i);
+  if (m) return parseInt(m[1], 10);
+  m = s.match(/\bC\s*([1-4])\b/);
+  if (m) return parseInt(m[1], 10);
+  // Ordinal: Primer/Segundo/Tercer/Cuarto corte
+  const ordinalMap = { primer: 1, segundo: 2, tercer: 3, tercero: 3, cuarto: 4 };
+  m = s.match(/\b(primer|segundo|tercer|tercero|cuarto)\s*corte\b/i);
+  if (m) return ordinalMap[m[1].toLowerCase()];
+  // Word: Corte uno/dos/tres/cuatro
+  const wordMap = { uno: 1, dos: 2, tres: 3, cuatro: 4 };
+  m = s.match(/\bcorte\s*(uno|dos|tres|cuatro)\b/i);
+  if (m) return wordMap[m[1].toLowerCase()];
+  return null;
+}
+
 export function buildCorteGroups(evidences, gradeCategories) {
   const list = Array.isArray(evidences) ? evidences : [];
   if (list.length === 0) return [];
@@ -213,7 +238,11 @@ export function buildCorteGroups(evidences, gradeCategories) {
   const corteItems = list.filter((e) => e?.isCorte === true);
   const nonCorteItems = list.filter((e) => e?.isCorte !== true);
 
-  // ── Path 1: categories ────────────────────────────────────────────────
+  // ── Path 1: categories (ONLY those named "Corte N") ──────────────────
+  // When the course uses categories, we ONLY surface those whose name
+  // matches a "Corte N" pattern (Corte 1, Primer corte, C2, Corte dos...).
+  // Any other category (Tareas, Quizzes, etc.) is skipped because the user
+  // wants the Resumen section to focus on the actual grading periods.
   const cats = Array.isArray(gradeCategories) ? gradeCategories : [];
   if (cats.length > 0) {
     const groups = [];
@@ -221,6 +250,9 @@ export function buildCorteGroups(evidences, gradeCategories) {
     for (const e of list) byId.set(String(e.gradeObjectId), e);
 
     for (const cat of cats) {
+      const period = detectCortePeriod(cat?.name);
+      if (period == null) continue;   // skip non-corte categories
+
       const ids = Array.isArray(cat?.itemIds) ? cat.itemIds : [];
       const itemsInCat = ids
         .map((id) => byId.get(String(id)))
@@ -234,21 +266,11 @@ export function buildCorteGroups(evidences, gradeCategories) {
         (e) => e.isCorte !== true && String(e.gradeType || "").toLowerCase() !== "formula"
       );
 
-      // Skip empty groups. Keep categories that have at least one item.
       if (aggregates.length === 0 && components.length === 0) continue;
-
-      // Infer a corte period from the category name or from any aggregate
-      let period = null;
-      const nm = String(cat?.name || "");
-      const m = nm.match(/\b(?:CORTE|Corte|C)\s*([1-4])\b/);
-      if (m) period = parseInt(m[1], 10);
-      if (period == null && aggregates.length > 0 && aggregates[0].cortePeriod) {
-        period = aggregates[0].cortePeriod;
-      }
 
       groups.push({
         id: `cat-${cat.id}`,
-        name: cat.name || "Sin nombre",
+        name: cat.name || `Corte ${period}`,
         period,
         aggregates,
         components,
