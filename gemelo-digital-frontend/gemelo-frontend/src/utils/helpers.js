@@ -179,6 +179,140 @@ export function parseFormulaReferences(formula) {
 }
 
 /**
+ * Build "corte groups" for the Resumen por Cortes section.
+ *
+ * Returns: [
+ *   {
+ *     id: string,            // unique key
+ *     name: string,          // group title
+ *     period: number|null,   // cortePeriod if we can infer one
+ *     aggregates: Evidence[],// corte summary items (Formula / isCorte)
+ *     components: Evidence[],// the individual evidences that make up the corte
+ *   },
+ *   ...
+ * ]
+ *
+ * Priority:
+ *   1. If gradeCategories[] is provided (category-based grouping, most reliable):
+ *      each category becomes a group. Items inside are split into
+ *      aggregates (isCorte OR gradeType=Formula) vs components (the rest).
+ *      Categories that contain no meaningful content are skipped.
+ *
+ *   2. Fallback for courses WITHOUT categories but with formula text:
+ *      parse each corte's formula references (via matchEvidencesByFormula).
+ *
+ *   3. Last-resort fallback: if there's only ONE corte in the whole course
+ *      and no categories, put every non-corte evidence under it. Better than
+ *      showing an empty group (pattern common when course uses a Formula
+ *      item that Brightspace doesn't expose the formula text for).
+ */
+export function buildCorteGroups(evidences, gradeCategories) {
+  const list = Array.isArray(evidences) ? evidences : [];
+  if (list.length === 0) return [];
+
+  const corteItems = list.filter((e) => e?.isCorte === true);
+  const nonCorteItems = list.filter((e) => e?.isCorte !== true);
+
+  // ── Path 1: categories ────────────────────────────────────────────────
+  const cats = Array.isArray(gradeCategories) ? gradeCategories : [];
+  if (cats.length > 0) {
+    const groups = [];
+    const byId = new Map();
+    for (const e of list) byId.set(String(e.gradeObjectId), e);
+
+    for (const cat of cats) {
+      const ids = Array.isArray(cat?.itemIds) ? cat.itemIds : [];
+      const itemsInCat = ids
+        .map((id) => byId.get(String(id)))
+        .filter(Boolean);
+      if (itemsInCat.length === 0) continue;
+
+      const aggregates = itemsInCat.filter(
+        (e) => e.isCorte === true || String(e.gradeType || "").toLowerCase() === "formula"
+      );
+      const components = itemsInCat.filter(
+        (e) => e.isCorte !== true && String(e.gradeType || "").toLowerCase() !== "formula"
+      );
+
+      // Skip empty groups. Keep categories that have at least one item.
+      if (aggregates.length === 0 && components.length === 0) continue;
+
+      // Infer a corte period from the category name or from any aggregate
+      let period = null;
+      const nm = String(cat?.name || "");
+      const m = nm.match(/\b(?:CORTE|Corte|C)\s*([1-4])\b/);
+      if (m) period = parseInt(m[1], 10);
+      if (period == null && aggregates.length > 0 && aggregates[0].cortePeriod) {
+        period = aggregates[0].cortePeriod;
+      }
+
+      groups.push({
+        id: `cat-${cat.id}`,
+        name: cat.name || "Sin nombre",
+        period,
+        aggregates,
+        components,
+      });
+    }
+
+    if (groups.length > 0) {
+      // Sort: by inferred period (if any), then by name
+      groups.sort((a, b) => {
+        const pa = a.period ?? 99;
+        const pb = b.period ?? 99;
+        if (pa !== pb) return pa - pb;
+        return String(a.name).localeCompare(String(b.name), "es");
+      });
+      return groups;
+    }
+  }
+
+  // ── Path 2: no categories, multiple cortes with formula text ──────────
+  if (corteItems.length > 1) {
+    const groups = corteItems
+      .slice()
+      .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
+      .map((c) => {
+        const components = matchEvidencesByFormula(c, nonCorteItems);
+        return {
+          id: `corte-${c.gradeObjectId}`,
+          name: c.name || `Corte ${c.cortePeriod || "?"}`,
+          period: c.cortePeriod || null,
+          aggregates: [c],
+          components,
+        };
+      });
+    // If formula parsing yielded nothing AND we still have non-corte items,
+    // distribute them by name prefix heuristic
+    const allMatched = new Set();
+    for (const g of groups) for (const c of g.components) allMatched.add(c.gradeObjectId);
+    const unmatched = nonCorteItems.filter((e) => !allMatched.has(e.gradeObjectId));
+    if (unmatched.length > 0 && groups.length > 0) {
+      // Append to the first corte by default
+      groups[0].components = [...groups[0].components, ...unmatched];
+    }
+    return groups;
+  }
+
+  // ── Path 3: single corte OR no cortes at all ─────────────────────────
+  if (corteItems.length === 1) {
+    // Try formula first
+    const fromFormula = matchEvidencesByFormula(corteItems[0], nonCorteItems);
+    const components = fromFormula.length > 0 ? fromFormula : nonCorteItems;
+    return [{
+      id: `corte-${corteItems[0].gradeObjectId}`,
+      name: corteItems[0].name || "Corte 1",
+      period: corteItems[0].cortePeriod || 1,
+      aggregates: [corteItems[0]],
+      components,
+    }];
+  }
+
+  // No cortes at all
+  return [];
+}
+
+/**
  * Given a formula-based corte item and the full evidence list, return the
  * matching evidences referenced by the formula.
  */

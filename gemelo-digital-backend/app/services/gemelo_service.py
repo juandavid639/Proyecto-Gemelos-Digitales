@@ -1586,9 +1586,19 @@ class GemeloService:
             if not isinstance(raw_items, list):
                 return {}
 
-            # Fetch grade categories in parallel so we can attach category names
-            # to evidences. Safe fallback if the endpoint is missing/forbidden.
+            # Fetch grade categories. Brightspace returns an array of category
+            # objects where each contains a nested Grades[] array listing the
+            # grade items that belong to that category. We use this to:
+            #   1) Resolve categoryName for each evidence
+            #   2) Build a gradeCategories[] structure so the frontend can
+            #      render "Resumen por Cortes" by category (most reliable
+            #      source of grouping — way more trustworthy than parsing
+            #      formulas, which Brightspace doesn't always expose).
             categories_by_id: Dict[str, str] = {}
+            # Lookup: gradeObjectId → categoryId (when the list_grade_items
+            # response lacks CategoryId, which happens in some tenants).
+            item_to_category: Dict[str, int] = {}
+            grade_categories_out: List[Dict[str, Any]] = []
             list_cats_fn = getattr(self.bs, "list_grade_categories", None)
             if callable(list_cats_fn):
                 try:
@@ -1596,13 +1606,39 @@ class GemeloService:
                     if isinstance(raw_cats, dict):
                         raw_cats = raw_cats.get("Items") or raw_cats.get("items") or []
                     for c in (raw_cats or []):
-                        if isinstance(c, dict):
-                            cid = c.get("Id") or c.get("CategoryId")
-                            nm = c.get("Name") or c.get("name")
-                            if cid is not None and nm:
-                                categories_by_id[str(cid)] = nm
+                        if not isinstance(c, dict):
+                            continue
+                        cid = c.get("Id") or c.get("CategoryId")
+                        nm = c.get("Name") or c.get("name") or ""
+                        if cid is None:
+                            continue
+                        categories_by_id[str(cid)] = nm
+
+                        # Extract nested Grades[] and register item→category
+                        inner_grades = c.get("Grades") or c.get("grades") or []
+                        item_ids: List[int] = []
+                        for ig in inner_grades:
+                            if not isinstance(ig, dict):
+                                continue
+                            gid = ig.get("Id") or ig.get("Identifier")
+                            if gid is None:
+                                continue
+                            try:
+                                gid_int = int(gid)
+                            except Exception:
+                                continue
+                            item_ids.append(gid_int)
+                            item_to_category[str(gid_int)] = int(cid)
+
+                        grade_categories_out.append({
+                            "id": int(cid),
+                            "name": nm,
+                            "itemIds": item_ids,
+                        })
                 except Exception:
                     categories_by_id = {}
+                    item_to_category = {}
+                    grade_categories_out = []
 
             course_dict = _as_dict(course_cfg)
             gp = (
@@ -1810,6 +1846,16 @@ class GemeloService:
                     category_id = it.get("CategoryId")
                     if category_id is None and _cat_obj is not None:
                         category_id = _cat_obj.get("Id")
+                    # CategoryId=0 means "uncategorized" in Brightspace, treat as None
+                    if category_id == 0:
+                        category_id = None
+                    # Fall back to the item→category lookup from the
+                    # categories endpoint (some tenants don't echo CategoryId
+                    # on the /grades/ list response)
+                    if category_id is None:
+                        gid_key = str(it.get("Id"))
+                        if gid_key in item_to_category:
+                            category_id = item_to_category[gid_key]
                     category_name = None
                     if _cat_obj is not None:
                         category_name = _cat_obj.get("Name")
@@ -1930,6 +1976,11 @@ class GemeloService:
                     key=lambda x: float(x.get("weightPct") or 0.0),
                     reverse=True,
                 )
+                # Expose the category structure so the frontend can render
+                # cortes grouped by their gradebook category (most reliable
+                # source of grouping, especially when the Formula text isn't
+                # exposed by the API).
+                out["gradeCategories"] = grade_categories_out
 
             return out
 

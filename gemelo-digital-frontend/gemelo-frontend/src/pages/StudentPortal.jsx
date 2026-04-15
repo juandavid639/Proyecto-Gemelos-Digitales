@@ -20,7 +20,7 @@ import {
   computeRiskFromPct,
   suggestRouteForStudent,
   flattenOutcomeDescriptions,
-  matchEvidencesByFormula,
+  buildCorteGroups,
 } from "../utils/helpers";
 import { injectStyles } from "../styles/global";
 import useMediaQuery from "../hooks/useMediaQuery";
@@ -620,66 +620,35 @@ export default function StudentPortal() {
           </div>
         )}
 
-        {/* ── Cortes agrupados por periodo ── */}
-        {corteItems.length > 0 && (
+        {/* ── Cortes agrupados ── */}
+        {(() => {
+          const gradeCategories = studentData?.gradebook?.gradeCategories || [];
+          const corteGroups = buildCorteGroups(evidences, gradeCategories);
+          if (corteGroups.length === 0) return null;
+          return (
           <div style={{ marginBottom: 20 }}>
             <Card title="Resumen por Cortes" accent="brand">
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, padding: "8px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
-                📊 Cada corte muestra sus <strong>ponderados acumulados</strong> y las evidencias que lo componen. Los cortes son un resumen — <strong>no cuentan dos veces</strong> en tu promedio.
+                📊 Cada sección muestra sus <strong>ponderados acumulados</strong> y las evidencias que la componen. Los resúmenes agregados <strong>no cuentan dos veces</strong> en tu promedio.
               </div>
 
               {(() => {
-                // Group corte items by cortePeriod (1, 2, 3, ...)
-                const groups = new Map();
-                for (const e of corteItems) {
-                  const k = e.cortePeriod || 99;
-                  if (!groups.has(k)) groups.set(k, []);
-                  groups.get(k).push(e);
-                }
-                const sortedKeys = [...groups.keys()].sort((a, b) => a - b);
-
-                // Fallback index: non-corte evidences that have an explicit
-                // cortePeriod (useful when names are like "Parcial 1 - corte 1")
-                const nonCorteByPeriod = new Map();
-                for (const e of nonCorteItems) {
-                  const k = e.cortePeriod;
-                  if (k == null) continue;
-                  if (!nonCorteByPeriod.has(k)) nonCorteByPeriod.set(k, []);
-                  nonCorteByPeriod.get(k).push(e);
-                }
-
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    {sortedKeys.map((k) => {
-                      const corteList = groups.get(k) || [];
-
-                      // Build the evidence list for this corte. Priority:
-                      //  1. PARSE THE FORMULA of any corte in this period —
-                      //     most reliable, works when evidences don't
-                      //     mention "corte" in their name.
-                      //  2. Fall back to non-corte items with cortePeriod=k.
-                      let evList = [];
-                      for (const c of corteList) {
-                        const fromFormula = matchEvidencesByFormula(c, nonCorteItems);
-                        for (const e of fromFormula) {
-                          if (!evList.find((x) => x.gradeObjectId === e.gradeObjectId)) {
-                            evList.push(e);
-                          }
-                        }
-                      }
-                      if (evList.length === 0) {
-                        evList = nonCorteByPeriod.get(k) || [];
-                      }
+                    {corteGroups.map((g, gi) => {
+                      const k = g.period ?? (gi + 1);
+                      const corteList = g.aggregates;
+                      const evList = g.components;
 
                       // Best overall score to color the header: pick the first
                       // graded corte for this period
                       const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
                       const headerPct = mainCorte?.scorePct;
                       const headerColor = headerPct != null ? colorForPct(headerPct, thresholds) : "var(--muted)";
-                      const label = k === 99 ? "Otros cortes" : `Corte ${k}`;
+                      const label = g.name;
 
                       return (
-                        <div key={`corte-grp-${k}`} style={{
+                        <div key={g.id} style={{
                           borderRadius: 14,
                           border: `1.5px solid ${headerColor === "var(--muted)" ? "var(--border)" : `${headerColor}55`}`,
                           overflow: "hidden",
@@ -699,14 +668,14 @@ export default function StudentPortal() {
                               display: "flex", alignItems: "center", justifyContent: "center",
                               fontSize: 14, fontWeight: 900,
                             }}>
-                              {k === 99 ? "?" : k}
+                              {g.period ?? (gi + 1)}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                {label}
+                                {g.period != null ? `Corte ${g.period}` : "Sección"}
                               </div>
                               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginTop: 1 }}>
-                                {mainCorte?.name || label}
+                                {label}
                               </div>
                             </div>
                             {headerPct != null && (
@@ -813,7 +782,8 @@ export default function StudentPortal() {
               })()}
             </Card>
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Entregas Vencidas (resaltadas) ── */}
         {overdueItems.length > 0 && (

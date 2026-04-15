@@ -1124,6 +1124,65 @@ function matchEvidencesByFormula(corteItem, allEvidences) {
   return out;
 }
 
+// Build corte groups preferring gradeCategories (from backend) over formula
+// parsing. See utils/helpers.js for full documentation.
+function buildCorteGroups(evidences, gradeCategories) {
+  const list = Array.isArray(evidences) ? evidences : [];
+  if (list.length === 0) return [];
+  const corteItems = list.filter((e) => e?.isCorte === true);
+  const nonCorteItems = list.filter((e) => e?.isCorte !== true);
+  const cats = Array.isArray(gradeCategories) ? gradeCategories : [];
+  if (cats.length > 0) {
+    const groups = [];
+    const byId = new Map();
+    for (const e of list) byId.set(String(e.gradeObjectId), e);
+    for (const cat of cats) {
+      const ids = Array.isArray(cat?.itemIds) ? cat.itemIds : [];
+      const itemsInCat = ids.map((id) => byId.get(String(id))).filter(Boolean);
+      if (itemsInCat.length === 0) continue;
+      const aggregates = itemsInCat.filter((e) => e.isCorte === true || String(e.gradeType || "").toLowerCase() === "formula");
+      const components = itemsInCat.filter((e) => e.isCorte !== true && String(e.gradeType || "").toLowerCase() !== "formula");
+      if (aggregates.length === 0 && components.length === 0) continue;
+      let period = null;
+      const nm = String(cat?.name || "");
+      const m = nm.match(/\b(?:CORTE|Corte|C)\s*([1-4])\b/);
+      if (m) period = parseInt(m[1], 10);
+      if (period == null && aggregates.length > 0 && aggregates[0].cortePeriod) period = aggregates[0].cortePeriod;
+      groups.push({ id: `cat-${cat.id}`, name: cat.name || "Sin nombre", period, aggregates, components });
+    }
+    if (groups.length > 0) {
+      groups.sort((a, b) => {
+        const pa = a.period ?? 99, pb = b.period ?? 99;
+        if (pa !== pb) return pa - pb;
+        return String(a.name).localeCompare(String(b.name), "es");
+      });
+      return groups;
+    }
+  }
+  if (corteItems.length > 1) {
+    const groups = corteItems.slice().sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99)).map((c) => ({
+      id: `corte-${c.gradeObjectId}`,
+      name: c.name || `Corte ${c.cortePeriod || "?"}`,
+      period: c.cortePeriod || null,
+      aggregates: [c],
+      components: matchEvidencesByFormula(c, nonCorteItems),
+    }));
+    const allMatched = new Set();
+    for (const g of groups) for (const c of g.components) allMatched.add(c.gradeObjectId);
+    const unmatched = nonCorteItems.filter((e) => !allMatched.has(e.gradeObjectId));
+    if (unmatched.length > 0 && groups.length > 0) {
+      groups[0].components = [...groups[0].components, ...unmatched];
+    }
+    return groups;
+  }
+  if (corteItems.length === 1) {
+    const fromFormula = matchEvidencesByFormula(corteItems[0], nonCorteItems);
+    const components = fromFormula.length > 0 ? fromFormula : nonCorteItems;
+    return [{ id: `corte-${corteItems[0].gradeObjectId}`, name: corteItems[0].name || "Corte 1", period: corteItems[0].cortePeriod || 1, aggregates: [corteItems[0]], components }];
+  }
+  return [];
+}
+
 function flattenOutcomeDescriptions(payload) {
   const sets = payload?.outcomeSets;
   if (!Array.isArray(sets)) return [];
@@ -5412,6 +5471,7 @@ const contentKpis = useMemo(() => {
   const drawerProjection = studentDetail?.projection || null;
   const drawerGradebook = studentDetail?.gradebook || {};
   const drawerEvidences = Array.isArray(drawerGradebook?.evidences) ? drawerGradebook.evidences : [];
+  const drawerGradeCategories = Array.isArray(drawerGradebook?.gradeCategories) ? drawerGradebook.gradeCategories : [];
   const drawerPendingItems = Array.isArray(drawerGradebook?.pendingItems) ? drawerGradebook.pendingItems : [];
   const drawerMissingValues = Array.isArray(drawerGradebook?.missingValues) ? drawerGradebook.missingValues : [];
   const drawerQcFlags = Array.isArray(studentDetail?.qualityFlags) ? studentDetail.qualityFlags : [];
@@ -7210,51 +7270,29 @@ const contentKpis = useMemo(() => {
                   };
                   return (
                     <>
-                      {/* Cortes agrupados por período (no cuentan en el promedio) */}
-                      {drawerCorte.length > 0 && (
+                      {/* Cortes agrupados por categoría/período (no cuentan en el promedio) */}
+                      {(() => {
+                        const dgroups = buildCorteGroups(drawerEvidences, drawerGradeCategories);
+                        return dgroups.length > 0;
+                      })() && (
                         <Card title="Resumen por Cortes" right={<span className="tag">No suman</span>} accent="brand">
                           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
-                            📊 Ponderados acumulados que Brightspace calcula. Se agrupan por período y se muestran junto a las evidencias que lo componen. <strong>No cuentan</strong> en el promedio del estudiante.
+                            📊 Ponderados acumulados que Brightspace calcula. Se agrupan por categoría/corte con las evidencias que los componen. <strong>No cuentan</strong> en el promedio del estudiante.
                           </div>
                           {(() => {
-                            const groups = new Map();
-                            for (const e of drawerCorte) {
-                              const k = e.cortePeriod || 99;
-                              if (!groups.has(k)) groups.set(k, []);
-                              groups.get(k).push(e);
-                            }
-                            const keys = [...groups.keys()].sort((a, b) => a - b);
-                            const nonCorteByPeriod = new Map();
-                            for (const e of drawerNonCorte) {
-                              const k = e.cortePeriod;
-                              if (k == null) continue;
-                              if (!nonCorteByPeriod.has(k)) nonCorteByPeriod.set(k, []);
-                              nonCorteByPeriod.get(k).push(e);
-                            }
+                            const dgroups = buildCorteGroups(drawerEvidences, drawerGradeCategories);
                             return (
                               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {keys.map((k) => {
-                                  const corteList = groups.get(k) || [];
-                                  // Primary: parse formula and match by name
-                                  let evList = [];
-                                  for (const c of corteList) {
-                                    const fromFormula = matchEvidencesByFormula(c, drawerNonCorte);
-                                    for (const e of fromFormula) {
-                                      if (!evList.find((x) => x.gradeObjectId === e.gradeObjectId)) {
-                                        evList.push(e);
-                                      }
-                                    }
-                                  }
-                                  // Fallback: non-corte items with explicit cortePeriod=k
-                                  if (evList.length === 0) {
-                                    evList = nonCorteByPeriod.get(k) || [];
-                                  }
+                                {dgroups.map((g, gi) => {
+                                  const corteList = g.aggregates;
+                                  const evList = g.components;
                                   const mainCorte = corteList.find((e) => e.scorePct != null) || corteList[0];
                                   const hPct = mainCorte?.scorePct;
                                   const hColor = hPct != null ? colorForPct(hPct, thresholds) : "var(--muted)";
-                                  const label = k === 99 ? "Otros cortes" : `Corte ${k}`;
+                                  const label = g.name;
+                                  const k = g.period ?? (gi + 1);
                                   return (
-                                    <div key={`dc-grp-${k}`} style={{
+                                    <div key={g.id} style={{
                                       borderRadius: 12,
                                       border: `1.5px solid ${hColor === "var(--muted)" ? "var(--border)" : `${hColor}55`}`,
                                       overflow: "hidden",
