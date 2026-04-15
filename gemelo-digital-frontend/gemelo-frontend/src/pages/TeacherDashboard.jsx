@@ -1159,26 +1159,34 @@ function buildCorteGroups(evidences, gradeCategories) {
       return groups;
     }
   }
-  if (corteItems.length > 1) {
-    const groups = corteItems.slice().sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99)).map((c) => ({
-      id: `corte-${c.gradeObjectId}`,
-      name: c.name || `Corte ${c.cortePeriod || "?"}`,
-      period: c.cortePeriod || null,
-      aggregates: [c],
-      components: matchEvidencesByFormula(c, nonCorteItems),
-    }));
-    const allMatched = new Set();
-    for (const g of groups) for (const c of g.components) allMatched.add(c.gradeObjectId);
-    const unmatched = nonCorteItems.filter((e) => !allMatched.has(e.gradeObjectId));
-    if (unmatched.length > 0 && groups.length > 0) {
-      groups[0].components = [...groups[0].components, ...unmatched];
+  // Order-based bucketing (Brightspace returns rollups AFTER their components)
+  const isRollup = (e) => e?.isCorte === true || String(e?.gradeType || "").toLowerCase() === "formula";
+  const rollups = list.filter(isRollup);
+  if (rollups.length > 0) {
+    const groups = [];
+    let bucket = [];
+    let periodCounter = 0;
+    for (const e of list) {
+      if (isRollup(e)) {
+        periodCounter += 1;
+        const fromFormula = matchEvidencesByFormula(e, list.filter((x) => !isRollup(x)));
+        const components = fromFormula.length > 0 ? fromFormula : bucket;
+        groups.push({
+          id: `corte-${e.gradeObjectId}`,
+          name: e.name || `Sección ${periodCounter}`,
+          period: e.cortePeriod ?? periodCounter,
+          aggregates: [e],
+          components,
+        });
+        bucket = [];
+      } else {
+        bucket.push(e);
+      }
+    }
+    if (bucket.length > 0) {
+      groups.push({ id: "tail-unassigned", name: "Sin corte asignado", period: null, aggregates: [], components: bucket });
     }
     return groups;
-  }
-  if (corteItems.length === 1) {
-    const fromFormula = matchEvidencesByFormula(corteItems[0], nonCorteItems);
-    const components = fromFormula.length > 0 ? fromFormula : nonCorteItems;
-    return [{ id: `corte-${corteItems[0].gradeObjectId}`, name: corteItems[0].name || "Corte 1", period: corteItems[0].cortePeriod || 1, aggregates: [corteItems[0]], components }];
   }
   return [];
 }

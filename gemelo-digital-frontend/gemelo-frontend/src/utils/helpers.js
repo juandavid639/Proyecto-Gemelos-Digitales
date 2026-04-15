@@ -267,48 +267,58 @@ export function buildCorteGroups(evidences, gradeCategories) {
     }
   }
 
-  // ── Path 2: no categories, multiple cortes with formula text ──────────
-  if (corteItems.length > 1) {
-    const groups = corteItems
-      .slice()
-      .sort((a, b) => (a.cortePeriod || 99) - (b.cortePeriod || 99))
-      .map((c) => {
-        const components = matchEvidencesByFormula(c, nonCorteItems);
-        return {
-          id: `corte-${c.gradeObjectId}`,
-          name: c.name || `Corte ${c.cortePeriod || "?"}`,
-          period: c.cortePeriod || null,
-          aggregates: [c],
+  // ── Path 2: no categories — use the API ORDER to bucket items ────────
+  // Brightspace returns grade items in gradebook display order. Rollup
+  // items (Formula / Corte) appear AFTER the assignments they aggregate:
+  //
+  //   Actividad I-1, Actividad I-2, ..., Actividad I_5, [Corte 1],
+  //   Actividad I-6, Actividad I-7, Actividad II-2, [Corte 2], ...
+  //
+  // So we walk the list, accumulate non-rollup items into a bucket, and
+  // flush the bucket every time we hit a rollup. This is the most
+  // reliable mapping when the API doesn't expose formula text.
+  const isRollup = (e) =>
+    e?.isCorte === true ||
+    String(e?.gradeType || "").toLowerCase() === "formula";
+
+  const rollups = list.filter(isRollup);
+  if (rollups.length > 0) {
+    const groups = [];
+    let bucket = [];
+    let periodCounter = 0;
+    for (const e of list) {
+      if (isRollup(e)) {
+        periodCounter += 1;
+        // Try formula-text matching first (if available) — more precise
+        const fromFormula = matchEvidencesByFormula(e, list.filter((x) => !isRollup(x)));
+        const components = fromFormula.length > 0 ? fromFormula : bucket;
+        groups.push({
+          id: `corte-${e.gradeObjectId}`,
+          name: e.name || `Sección ${periodCounter}`,
+          period: e.cortePeriod ?? periodCounter,
+          aggregates: [e],
           components,
-        };
+        });
+        bucket = [];
+      } else {
+        bucket.push(e);
+      }
+    }
+    // Any non-rollup items left after the LAST rollup are "work not yet
+    // assigned to a corte" — show them as a tail group so the user sees them.
+    if (bucket.length > 0) {
+      groups.push({
+        id: "tail-unassigned",
+        name: "Sin corte asignado",
+        period: null,
+        aggregates: [],
+        components: bucket,
       });
-    // If formula parsing yielded nothing AND we still have non-corte items,
-    // distribute them by name prefix heuristic
-    const allMatched = new Set();
-    for (const g of groups) for (const c of g.components) allMatched.add(c.gradeObjectId);
-    const unmatched = nonCorteItems.filter((e) => !allMatched.has(e.gradeObjectId));
-    if (unmatched.length > 0 && groups.length > 0) {
-      // Append to the first corte by default
-      groups[0].components = [...groups[0].components, ...unmatched];
     }
     return groups;
   }
 
-  // ── Path 3: single corte OR no cortes at all ─────────────────────────
-  if (corteItems.length === 1) {
-    // Try formula first
-    const fromFormula = matchEvidencesByFormula(corteItems[0], nonCorteItems);
-    const components = fromFormula.length > 0 ? fromFormula : nonCorteItems;
-    return [{
-      id: `corte-${corteItems[0].gradeObjectId}`,
-      name: corteItems[0].name || "Corte 1",
-      period: corteItems[0].cortePeriod || 1,
-      aggregates: [corteItems[0]],
-      components,
-    }];
-  }
-
-  // No cortes at all
+  // No rollups at all → nothing to show in this section
   return [];
 }
 
