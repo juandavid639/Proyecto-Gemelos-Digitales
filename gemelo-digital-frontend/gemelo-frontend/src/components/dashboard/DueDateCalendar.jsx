@@ -14,10 +14,22 @@ import { apiGet } from "../../utils/api";
  * Props:
  *   orgUnitId: course id
  */
+// Local-time date key (YYYY-MM-DD) — avoids UTC drift that shifts 11pm
+// deadlines to the next day on toISOString().
+function localDateKey(d) {
+  if (!d) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function DueDateCalendar({ orgUnitId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Lifted hover state so list items can cross-highlight the calendar
+  const [hoverId, setHoverId] = useState(null);
 
   useEffect(() => {
     if (!orgUnitId) return;
@@ -156,27 +168,24 @@ export default function DueDateCalendar({ orgUnitId }) {
       : (a.isUrgent ? "rgba(220, 38, 38, 0.35)" : "rgba(11, 95, 255, 0.25)");
 
     const tooltip = `${formatRemaining(a)} · ${formatExactDate(a)}`;
+    const isHovered = hoverId === a.id;
 
     return (
       <div
         key={`${a.id}-${a.dueIso}`}
         title={tooltip}
+        onMouseEnter={() => setHoverId(a.id)}
+        onMouseLeave={() => setHoverId((cur) => (cur === a.id ? null : cur))}
         style={{
           display: "flex", alignItems: "center", gap: 10,
           padding: "10px 12px",
           borderRadius: 10,
-          border: `1px solid ${chipBorder}`,
-          background: chipBg,
-          cursor: "help",
-          transition: "transform 0.15s, box-shadow 0.15s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.boxShadow = "0 4px 12px rgba(11, 95, 255, 0.12)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "";
-          e.currentTarget.style.boxShadow = "";
+          border: `1px solid ${isHovered ? chipColor : chipBorder}`,
+          background: isHovered ? `${chipColor}18` : chipBg,
+          cursor: "pointer",
+          transition: "transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s",
+          transform: isHovered ? "translateY(-1px)" : "",
+          boxShadow: isHovered ? `0 4px 12px ${chipColor}22` : "",
         }}
       >
         <div style={{
@@ -238,50 +247,69 @@ export default function DueDateCalendar({ orgUnitId }) {
           0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
           50% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
         }
+        @media (max-width: 900px) {
+          .ddc-layout { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
-      {/* Visual month grid with hover range highlighting */}
-      <MonthGrid assignments={assignments} />
+      {/* Two-column layout: calendar (compact, left) + list (right) */}
+      <div
+        className="ddc-layout"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(320px, 380px) 1fr",
+          gap: 14,
+          alignItems: "start",
+        }}
+      >
+        <MonthGrid
+          assignments={assignments}
+          hoverId={hoverId}
+          onHoverChange={setHoverId}
+        />
 
-      {upcoming.length > 0 ? (
-        <div>
-          <div style={{
-            fontSize: 11, color: "var(--muted)", fontWeight: 800,
-            textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span>📅 Próximas entregas ({upcoming.length})</span>
-            {upcoming.some((a) => a.isUrgent) && (
-              <span style={{
-                fontSize: 10, color: "#dc2626", fontWeight: 800,
-                padding: "2px 6px", borderRadius: 10,
-                background: "rgba(220, 38, 38, 0.08)",
-                border: "1px solid rgba(220, 38, 38, 0.25)",
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {upcoming.length > 0 ? (
+            <div>
+              <div style={{
+                fontSize: 11, color: "var(--muted)", fontWeight: 800,
+                textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
+                display: "flex", alignItems: "center", gap: 6,
               }}>
-                ⚠ {upcoming.filter((a) => a.isUrgent).length} urgente(s)
-              </span>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
-            {upcoming.map((a) => renderItem(a, false))}
-          </div>
-        </div>
-      ) : (
-        <div style={{ padding: "16px 12px", textAlign: "center", color: "var(--muted)", fontSize: 12, background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
-          ✓ Sin entregas pendientes
-        </div>
-      )}
+                <span>📅 Próximas entregas ({upcoming.length})</span>
+                {upcoming.some((a) => a.isUrgent) && (
+                  <span style={{
+                    fontSize: 10, color: "#dc2626", fontWeight: 800,
+                    padding: "2px 6px", borderRadius: 10,
+                    background: "rgba(220, 38, 38, 0.08)",
+                    border: "1px solid rgba(220, 38, 38, 0.25)",
+                  }}>
+                    ⚠ {upcoming.filter((a) => a.isUrgent).length} urgente(s)
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+                {upcoming.map((a) => renderItem(a, false))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: "16px 12px", textAlign: "center", color: "var(--muted)", fontSize: 12, background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
+              ✓ Sin entregas pendientes
+            </div>
+          )}
 
-      {recent.length > 0 && (
-        <div>
-          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Vencidas recientemente
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {recent.map((a) => renderItem(a, true))}
-          </div>
+          {recent.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                Vencidas recientemente
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {recent.map((a) => renderItem(a, true))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", borderTop: "1px solid var(--border)", paddingTop: 8 }}>
         {items.length} ítems del curso · {assignments.length} con fecha de entrega
@@ -295,7 +323,7 @@ export default function DueDateCalendar({ orgUnitId }) {
 // When the user hovers over an assignment chip, the date range from its
 // start date to its due date is highlighted across the grid cells.
 // ─────────────────────────────────────────────────────────────────────────
-function MonthGrid({ assignments }) {
+function MonthGrid({ assignments, hoverId, onHoverChange }) {
   // Start on the month that contains the first upcoming assignment (or today)
   const initialMonth = React.useMemo(() => {
     const now = new Date();
@@ -305,7 +333,6 @@ function MonthGrid({ assignments }) {
   }, [assignments]);
 
   const [cursorMonth, setCursorMonth] = useState(initialMonth);
-  const [hoverId, setHoverId] = useState(null);
 
   useEffect(() => {
     setCursorMonth(initialMonth);
@@ -329,11 +356,14 @@ function MonthGrid({ assignments }) {
     return cells;
   }, [year, month]);
 
-  // Index assignments by YYYY-MM-DD (by due date) for quick lookup
+  // Index assignments by local YYYY-MM-DD (by due date) for quick lookup.
+  // IMPORTANT: we use local date components — NOT toISOString — because a
+  // deadline like "2026-04-15T23:59:00-05:00" converts to "2026-04-16" in UTC
+  // and would show on the wrong day in the calendar.
   const byDate = useMemo(() => {
     const map = new Map();
     for (const a of assignments) {
-      const key = a.due.toISOString().slice(0, 10);
+      const key = localDateKey(a.due);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(a);
     }
@@ -449,14 +479,14 @@ function MonthGrid({ assignments }) {
         ))}
       </div>
 
-      {/* Day cells */}
+      {/* Day cells — compact circular style */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(7, 1fr)",
-        gap: 2,
+        gap: 4,
       }}>
         {gridDays.map((day, idx) => {
-          const key = day.toISOString().slice(0, 10);
+          const key = localDateKey(day);
           const inMonth = day.getMonth() === month;
           const dayAssignments = byDate.get(key) || [];
           const isToday = day.getTime() === today.getTime();
@@ -464,87 +494,116 @@ function MonthGrid({ assignments }) {
           const isRangeStart = isHoverStart(day);
           const isRangeEnd = isHoverEnd(day);
 
+          // Pick a "primary color" for this cell based on the most urgent
+          // assignment due that day (red > blue > grey-past)
+          let primary = null;
+          if (dayAssignments.length > 0) {
+            const urgent = dayAssignments.find((a) => a.isUrgent);
+            const upcomingA = dayAssignments.find((a) => !a.isPast);
+            const past = dayAssignments.find((a) => a.isPast);
+            primary = urgent || upcomingA || past;
+          }
+          const primaryColor = !primary
+            ? null
+            : (primary.isPast ? "#94a3b8" : (primary.isUrgent ? "#dc2626" : "#0b5fff"));
+
+          // Cell background: hover range takes precedence
           let bg = "transparent";
           let borderColor = "transparent";
           if (inRange) {
-            bg = "rgba(11, 95, 255, 0.15)";
-            borderColor = "rgba(11, 95, 255, 0.4)";
+            // Color the range using the hovered assignment's own color
+            const hov = assignments.find((a) => a.id === hoverId);
+            const hovColor = hov
+              ? (hov.isPast ? "#94a3b8" : (hov.isUrgent ? "#dc2626" : "#0b5fff"))
+              : "#0b5fff";
+            bg = `${hovColor}1f`;
+            borderColor = `${hovColor}55`;
           }
           if (isToday) {
             borderColor = "var(--brand)";
           }
 
+          const hasAssignment = dayAssignments.length > 0;
+          const isPrimaryHovered =
+            hasAssignment && dayAssignments.some((a) => a.id === hoverId);
+
           return (
             <div
               key={idx}
               style={{
-                minHeight: 54,
-                padding: 3,
-                borderRadius: 6,
+                aspectRatio: "1 / 1",
+                padding: 2,
+                borderRadius: 8,
                 background: bg,
                 border: `1.5px solid ${borderColor}`,
                 opacity: inMonth ? 1 : 0.35,
                 position: "relative",
                 transition: "background 0.12s, border-color 0.12s",
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}
+              onMouseEnter={
+                hasAssignment && primary
+                  ? () => onHoverChange(primary.id)
+                  : undefined
+              }
+              onMouseLeave={
+                hasAssignment && primary
+                  ? () => onHoverChange((cur) => (cur === primary.id ? null : cur))
+                  : undefined
+              }
+              title={
+                hasAssignment
+                  ? dayAssignments
+                      .map((a) => `${a.isUrgent ? "⚠ " : ""}${a.name} — vence ${a.due.toLocaleDateString("es-CO")}`)
+                      .join("\n")
+                  : undefined
+              }
             >
-              <div style={{
-                fontSize: 10, fontWeight: isToday ? 800 : 600,
-                color: isToday ? "var(--brand)" : (inMonth ? "var(--text)" : "var(--muted)"),
-                textAlign: "right",
-                paddingRight: 2,
-                marginBottom: 2,
-              }}>
-                {day.getDate()}
-                {isRangeStart && (
-                  <span style={{ fontSize: 8, color: "var(--brand)", marginLeft: 3 }}>▶</span>
-                )}
-                {isRangeEnd && !isRangeStart && (
-                  <span style={{ fontSize: 8, color: "var(--brand)", marginLeft: 3 }}>◀</span>
-                )}
-              </div>
-
-              {/* Assignment chips inside the cell */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {dayAssignments.slice(0, 2).map((a) => {
-                  const color = a.isPast
-                    ? "#94a3b8"
-                    : (a.isUrgent ? "#dc2626" : "#0b5fff");
-                  const isHovered = hoverId === a.id;
-                  return (
-                    <div
-                      key={a.id}
-                      onMouseEnter={() => setHoverId(a.id)}
-                      onMouseLeave={() => setHoverId((cur) => (cur === a.id ? null : cur))}
-                      title={`${a.name}${a.start ? ` · Disponible: ${a.start.toLocaleDateString("es-CO")}` : ""} · Vence: ${a.due.toLocaleDateString("es-CO")}`}
-                      style={{
-                        fontSize: 8, fontWeight: 700,
-                        padding: "2px 4px",
-                        borderRadius: 4,
-                        background: isHovered ? color : `${color}22`,
-                        color: isHovered ? "#fff" : color,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        cursor: "pointer",
-                        border: `1px solid ${color}66`,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {a.isUrgent && <span style={{ marginRight: 2 }}>!</span>}
-                      {a.name}
-                    </div>
-                  );
-                })}
-                {dayAssignments.length > 2 && (
-                  <div style={{
-                    fontSize: 8, color: "var(--muted)",
-                    textAlign: "center", fontWeight: 700,
-                  }}>
-                    +{dayAssignments.length - 2}
-                  </div>
-                )}
-              </div>
+              {hasAssignment ? (
+                <div style={{
+                  width: "88%", aspectRatio: "1 / 1", maxWidth: 36,
+                  borderRadius: "50%",
+                  background: isPrimaryHovered ? primaryColor : `${primaryColor}26`,
+                  border: `1.5px solid ${primaryColor}${isPrimaryHovered ? "" : "88"}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 800,
+                  color: isPrimaryHovered ? "#fff" : primaryColor,
+                  cursor: "pointer",
+                  position: "relative",
+                  boxShadow: isPrimaryHovered ? `0 2px 8px ${primaryColor}55` : "",
+                  transition: "all 0.12s",
+                }}>
+                  {day.getDate()}
+                  {primary?.isUrgent && (
+                    <span style={{
+                      position: "absolute",
+                      top: -3, right: -3,
+                      width: 10, height: 10, borderRadius: "50%",
+                      background: "#dc2626", color: "#fff",
+                      fontSize: 7, fontWeight: 900,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      border: "1.5px solid #fff",
+                    }}>!</span>
+                  )}
+                  {dayAssignments.length > 1 && (
+                    <span style={{
+                      position: "absolute",
+                      bottom: -2, right: -2,
+                      fontSize: 7, fontWeight: 900,
+                      color: "#fff", background: "var(--muted)",
+                      borderRadius: 5, padding: "0 3px",
+                      border: "1.5px solid #fff",
+                    }}>+{dayAssignments.length - 1}</span>
+                  )}
+                </div>
+              ) : (
+                <div style={{
+                  fontSize: 11, fontWeight: isToday ? 800 : 500,
+                  color: isToday ? "var(--brand)" : (inMonth ? "var(--text)" : "var(--muted)"),
+                }}>
+                  {day.getDate()}
+                </div>
+              )}
             </div>
           );
         })}
