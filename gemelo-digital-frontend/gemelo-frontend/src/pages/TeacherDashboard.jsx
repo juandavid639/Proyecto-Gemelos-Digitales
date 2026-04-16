@@ -29,6 +29,8 @@ import DueDateCalendar from "../components/dashboard/DueDateCalendar";
 import AINarrativeSummary from "../components/dashboard/AINarrativeSummary";
 import GradePredictions from "../components/dashboard/GradePredictions";
 import EvidenceReports from "../components/dashboard/EvidenceReports";
+const CoordinatorDashboard = React.lazy(() => import("./CoordinatorDashboard"));
+const StudentPortal = React.lazy(() => import("./StudentPortal"));
 import useStudentNotes from "../hooks/useStudentNotes";
 import useCompactMode from "../hooks/useCompactMode";
 import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
@@ -2282,7 +2284,7 @@ function AlertsPanel({ alerts }) {
   );
 }
 
-function Drawer({ open, onClose, title, subtitle, children }) {
+function Drawer({ open, onClose, title, subtitle, extraHeader, children }) {
   React.useEffect(() => {
     const handler = (e) => { if (e.key === "Escape") onClose(); };
     if (open) document.addEventListener("keydown", handler);
@@ -2322,9 +2324,10 @@ function Drawer({ open, onClose, title, subtitle, children }) {
           </div>
           {/* Title row */}
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, paddingBottom: 14 }}>
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</div>
               {subtitle && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, fontWeight: 500 }}>{subtitle}</div>}
+              {extraHeader && <div style={{ marginTop: 6 }}>{extraHeader}</div>}
             </div>
             <button className="btn" onClick={onClose} style={{ flexShrink: 0, marginTop: 2 }}>✕ Cerrar</button>
           </div>
@@ -4175,7 +4178,7 @@ export default function TeacherDashboard() {
   // Read initialOrgUnitId from AuthContext — AuthContext claims sessionStorage
   // early (before lazy-loaded TeacherDashboard mounts), so we rely on the
   // context value instead of reading sessionStorage directly here.
-  const { initialOrgUnitId: ctxInitialOrgUnitId, isDualRole } = useAuth();
+  const { initialOrgUnitId: ctxInitialOrgUnitId, isDualRole, isSuperAdmin } = useAuth();
   const { locale, toggleLocale } = useI18n();
   const navigate = useNavigate();
 
@@ -4396,6 +4399,12 @@ export default function TeacherDashboard() {
 
   // Command palette (Ctrl+K)
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Coordinator panel overlay (renders on top of dashboard, avoids re-fetch)
+  const [showCoordinator, setShowCoordinator] = useState(false);
+
+  // SuperAdmin impersonation: view a student's portal
+  const [impersonateStudent, setImpersonateStudent] = useState(null); // { userId, name }
 
   // Quick filter (active filter chip applied to the students table)
   // Values: null, "risk_high", "risk_medium", "no_coverage", "overdue", "pending_grade", "approved"
@@ -5871,7 +5880,7 @@ const contentKpis = useMemo(() => {
         isDualRole={isDualRole}
         onGoHome={() => navigate("/")}
         onOpenPalette={() => setPaletteOpen(true)}
-        onOpenCoordinator={() => navigate("/coordinator")}
+        onOpenCoordinator={() => setShowCoordinator(true)}
         locale={locale}
         toggleLocale={toggleLocale}
       />
@@ -6520,7 +6529,7 @@ const contentKpis = useMemo(() => {
         {/* ── Calendario de entregas ── */}
         <div className="fade-up fade-up-3" style={{ marginBottom: 16 }}>
           <Card title={<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>Calendario de entregas <InfoTooltip text="Próximas entregas del curso con detección de sobrecarga (3+ en el mismo día). Heatmap semanal al final. Toma los datos directamente del gradebook del curso." /></span>}>
-            <DueDateCalendar orgUnitId={orgUnitId} />
+            <DueDateCalendar orgUnitId={orgUnitId} studentRows={studentRows} />
           </Card>
         </div>
 
@@ -7055,6 +7064,25 @@ const contentKpis = useMemo(() => {
         }}
         title={selectedStudent ? `${selectedStudent.displayName}` : "Estudiante"}
         subtitle={`ID ${selectedStudent?.userId ?? "—"} · Gemelo Digital · Vista docente`}
+        extraHeader={isSuperAdmin && selectedStudent && (
+          <button
+            onClick={() => setImpersonateStudent({
+              userId: selectedStudent.userId,
+              name: selectedStudent.displayName,
+            })}
+            style={{
+              fontSize: 11, fontWeight: 700,
+              padding: "5px 10px", borderRadius: 8,
+              background: "rgba(255, 170, 0, 0.12)",
+              color: "#b27300",
+              border: "1px solid rgba(255, 170, 0, 0.3)",
+              cursor: "pointer",
+              fontFamily: "var(--font)",
+            }}
+          >
+            👁 Ver portal de este estudiante
+          </button>
+        )}
       >
         {studentLoading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", paddingTop: 40 }}>
@@ -7745,6 +7773,65 @@ const contentKpis = useMemo(() => {
           </div>
         )}
       </Drawer>
+
+      {/* SuperAdmin impersonation — view a student's portal */}
+      {impersonateStudent && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 310,
+          background: "var(--page-bg, #f5f7fb)",
+          overflow: "auto",
+        }}>
+          {/* Banner: "Viewing as..." */}
+          <div style={{
+            position: "sticky", top: 0, zIndex: 5,
+            padding: "8px 20px",
+            background: "linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%)",
+            color: "#000",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            fontSize: 12, fontWeight: 700,
+          }}>
+            <span>👁 Vista previa: estás viendo como <strong>{impersonateStudent.name}</strong> (ID {impersonateStudent.userId})</span>
+            <button
+              onClick={() => setImpersonateStudent(null)}
+              style={{
+                background: "#fff", border: "none", borderRadius: 6,
+                padding: "4px 12px", fontSize: 11, fontWeight: 800,
+                cursor: "pointer", color: "#000",
+              }}
+            >
+              ✕ Salir de vista previa
+            </button>
+          </div>
+          <React.Suspense fallback={
+            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+              Cargando portal del estudiante...
+            </div>
+          }>
+            <StudentPortal
+              orgUnitIdOverride={orgUnitId}
+              userIdOverride={impersonateStudent.userId}
+            />
+          </React.Suspense>
+        </div>
+      )}
+
+      {/* Coordinator overlay — renders ON TOP of the dashboard so data is
+          preserved. When the user closes it, the dashboard is still mounted. */}
+      {showCoordinator && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 300,
+          background: "var(--page-bg, #f5f7fb)",
+          overflow: "auto",
+        }}>
+          <React.Suspense fallback={
+            <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+              Cargando panel coordinador...
+            </div>
+          }>
+            <CoordinatorDashboard onClose={() => setShowCoordinator(false)} />
+          </React.Suspense>
+        </div>
+      )}
     </div>
   );
 }

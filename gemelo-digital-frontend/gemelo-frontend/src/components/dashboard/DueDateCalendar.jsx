@@ -24,7 +24,7 @@ function localDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-export default function DueDateCalendar({ orgUnitId }) {
+export default function DueDateCalendar({ orgUnitId, studentRows }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -51,6 +51,25 @@ export default function DueDateCalendar({ orgUnitId }) {
     return () => { alive = false; };
   }, [orgUnitId]);
 
+  // Compute per-gradeObjectId submission counts from studentRows (teacher view)
+  const submissionStats = useMemo(() => {
+    const rows = Array.isArray(studentRows) ? studentRows : [];
+    if (rows.length === 0) return null;
+    const loaded = rows.filter((s) => !s.isLoading && Array.isArray(s.evidences));
+    if (loaded.length === 0) return null;
+    const stats = new Map(); // gradeObjectId → { graded, total }
+    for (const s of loaded) {
+      for (const ev of (s.evidences || [])) {
+        const gid = String(ev.gradeObjectId);
+        if (!stats.has(gid)) stats.set(gid, { graded: 0, total: 0 });
+        const entry = stats.get(gid);
+        entry.total += 1;
+        if (ev.isGraded || ev.scorePct != null) entry.graded += 1;
+      }
+    }
+    return stats;
+  }, [studentRows]);
+
   // Extract each assignment individually (not grouped by date)
   const assignments = useMemo(() => {
     const now = new Date();
@@ -67,6 +86,7 @@ export default function DueDateCalendar({ orgUnitId }) {
       const msDiff = d - now;
       const daysUntil = Math.floor(msDiff / 86400000);
       const hoursUntil = Math.floor(msDiff / 3600000);
+      const stats = submissionStats?.get(String(it.id)) || null;
       list.push({
         id: it.id,
         name: it.name || `Ítem ${it.id}`,
@@ -81,6 +101,8 @@ export default function DueDateCalendar({ orgUnitId }) {
         isPast: msDiff < 0,
         isUrgent: msDiff >= 0 && daysUntil <= 2,
         source: it.source,
+        gradedCount: stats?.graded ?? null,
+        totalStudents: stats?.total ?? null,
       });
     }
     list.sort((a, b) => a.due - b.due);
@@ -227,6 +249,26 @@ export default function DueDateCalendar({ orgUnitId }) {
           </div>
         </div>
 
+        {a.totalStudents != null && a.totalStudents > 0 && (
+          <span style={{
+            flexShrink: 0, fontSize: 10, fontWeight: 700,
+            padding: "2px 8px", borderRadius: 10,
+            background: (a.gradedCount ?? 0) >= a.totalStudents
+              ? "var(--ok-bg)"
+              : (a.gradedCount ?? 0) > 0
+                ? "var(--watch-bg)"
+                : "var(--bg)",
+            color: (a.gradedCount ?? 0) >= a.totalStudents
+              ? "var(--ok)"
+              : (a.gradedCount ?? 0) > 0
+                ? "var(--watch)"
+                : "var(--muted)",
+            border: "1px solid var(--border)",
+            fontFamily: "var(--font-mono)",
+          }}>
+            {a.gradedCount ?? 0}/{a.totalStudents}
+          </span>
+        )}
         {a.weightPct > 0 && (
           <span className="tag" style={{
             flexShrink: 0, fontSize: 10, fontWeight: 700,

@@ -111,7 +111,7 @@ function ProgressBar({ value, color, animate = true }) {
 
 /* ── Student Portal Page ── */
 
-export default function StudentPortal() {
+export default function StudentPortal({ orgUnitIdOverride, userIdOverride }) {
   useEffect(() => { injectStyles(); }, []);
 
   const { authUser, logout, initialOrgUnitId, isDualRole } = useAuth();
@@ -127,7 +127,10 @@ export default function StudentPortal() {
   }, [darkMode]);
 
   // Course selection (students typically come from LTI with orgUnitId)
+  // Override props allow SuperAdmin to view this portal for any user/course.
+  const isOverride = !!(orgUnitIdOverride && userIdOverride);
   const [orgUnitId, setOrgUnitId] = useState(() => {
+    if (orgUnitIdOverride) return Number(orgUnitIdOverride);
     if (initialOrgUnitId) return initialOrgUnitId;
     const saved = sessionStorage.getItem("gemelo_pending_org");
     if (saved && Number(saved) > 0) return Number(saved);
@@ -207,7 +210,7 @@ export default function StudentPortal() {
   const [courseInfo, setCourseInfo] = useState(null);
   const [learningOutcomesPayload, setLearningOutcomesPayload] = useState(null);
 
-  const userId = authUser?.user_id;
+  const userId = userIdOverride || authUser?.user_id;
   const userName = authUser?.user_name || "Estudiante";
   const firstName = userName.split(" ")[0];
 
@@ -398,12 +401,24 @@ export default function StudentPortal() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 24px", height: 56,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900 }}>CESA</div>
-          <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900, flexShrink: 0 }}>CESA</div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>Gemelo Digital</div>
             <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Portal Estudiante</div>
           </div>
+          {courseInfo?.Name && (
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: "var(--brand)",
+              padding: "4px 10px", borderRadius: 8,
+              background: "var(--brand-light)",
+              border: "1px solid var(--brand-light2, #D6E4FF)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              maxWidth: isMobile ? 120 : 280,
+            }}>
+              {courseInfo.Name}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {(studentCourses.length > 1 || isDualRole) && (
@@ -418,7 +433,7 @@ export default function StudentPortal() {
                 background: "var(--brand)", color: "#fff", cursor: "pointer",
               }}
             >
-              📚 {isMobile ? "" : (isDualRole ? "Inicio" : "Mis cursos")}
+              🏠 {isMobile ? "" : (isDualRole ? "Inicio" : "Mis cursos")}
             </button>
           )}
           <button

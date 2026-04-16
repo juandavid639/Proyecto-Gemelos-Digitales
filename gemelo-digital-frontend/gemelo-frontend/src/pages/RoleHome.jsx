@@ -7,13 +7,36 @@ import { injectStyles } from "../styles/global";
 export default function RoleHome() {
   useEffect(() => { injectStyles(); }, []);
 
-  const { authUser, logout, isInstructor, isStudent, isDualRole } = useAuth();
+  const { authUser, logout, isInstructor, isStudent, isDualRole, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const firstName = (authUser?.user_name || "").split(" ")[0] || "Usuario";
 
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+
+  // SuperAdmin: global course search results from /brightspace/all-courses
+  const [globalResults, setGlobalResults] = useState([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin || search.trim().length < 3) {
+      setGlobalResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setGlobalLoading(true);
+      try {
+        const data = await apiGet(`/brightspace/all-courses?search=${encodeURIComponent(search.trim())}&limit=30`);
+        setGlobalResults(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        setGlobalResults([]);
+      } finally {
+        setGlobalLoading(false);
+      }
+    }, 500); // debounce 500ms
+    return () => clearTimeout(timer);
+  }, [search, isSuperAdmin]);
 
   // Load all enrolled courses with roleName
   useEffect(() => {
@@ -214,6 +237,57 @@ export default function RoleHome() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
                   {filteredStud.map(c => <CourseCard key={`stud-${c.id}`} course={c} role="student" />)}
                 </div>
+              </div>
+            )}
+
+            {/* ── SuperAdmin: global course search results ── */}
+            {isSuperAdmin && search.trim().length >= 3 && (
+              <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: "20px 20px 16px", boxShadow: "var(--shadow)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 16 }}>🔍</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
+                    Búsqueda global (Super Admin)
+                  </span>
+                  {globalLoading && <span style={{ fontSize: 11, color: "var(--muted)" }}>Buscando...</span>}
+                  {!globalLoading && <span className="tag">{globalResults.length}</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--brand)" }}>
+                  Esta búsqueda consulta <strong>todos los cursos</strong> de Brightspace, no solo tus inscripciones. Escribe al menos 3 caracteres.
+                </div>
+                {globalResults.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 400, overflowY: "auto" }}>
+                    {globalResults.map(c => (
+                      <button
+                        key={`global-${c.id || c.Identifier}`}
+                        onClick={() => handleSelectCourse(c.id || c.Identifier, "instructor")}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 12,
+                          padding: "12px 14px", borderRadius: 12,
+                          border: "1px solid var(--border)", background: "var(--bg)",
+                          cursor: "pointer", textAlign: "left", fontFamily: "var(--font)",
+                          width: "100%",
+                        }}
+                      >
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--brand)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, flexShrink: 0 }}>
+                          {String(c.id || c.Identifier || "").slice(-3)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {c.name || c.Name || `Curso ${c.id || c.Identifier}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                            ID: {c.id || c.Identifier} · {c.code || c.Code || ""}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 16, color: "var(--muted)" }}>→</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : !globalLoading ? (
+                  <div style={{ textAlign: "center", padding: "12px 0", color: "var(--muted)", fontSize: 12 }}>
+                    Sin resultados en Brightspace para "{search}"
+                  </div>
+                ) : null}
               </div>
             )}
 

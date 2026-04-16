@@ -107,6 +107,9 @@ export function AuthProvider({ children }) {
           const appRoles = mapAllRoles(allRolesRaw);
           const primaryRole = mapSingleRole(data.role) || appRoles[0];
 
+          const isSuperAdmin = allRolesRaw.some(
+            (r) => String(r).toLowerCase().includes("super admin")
+          );
           const user = {
             ...data,
             all_roles: allRolesRaw,
@@ -115,6 +118,7 @@ export function AuthProvider({ children }) {
             isDualRole: appRoles.length > 1,
             isInstructor: appRoles.includes("instructor"),
             isStudent: appRoles.includes("student"),
+            isSuperAdmin,
           };
           setAuthUser(user);
 
@@ -174,6 +178,7 @@ export function AuthProvider({ children }) {
       isDualRole: authUser?.isDualRole || false,
       isInstructor: authUser?.isInstructor ?? true,
       isStudent: authUser?.isStudent ?? false,
+      isSuperAdmin: authUser?.isSuperAdmin ?? false,
       logout,
       showTutorial,
       setShowTutorial,

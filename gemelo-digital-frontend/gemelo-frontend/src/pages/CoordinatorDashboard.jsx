@@ -14,7 +14,7 @@ import Breadcrumb from "../components/ui/Breadcrumb";
  * Accessible at /coordinator. Any user whose Brightspace role is
  * "Coordinador Administrativo" or "Super Administrator" gets access.
  */
-export default function CoordinatorDashboard() {
+export default function CoordinatorDashboard({ onClose }) {
   useEffect(() => { injectStyles(); }, []);
   const navigate = useNavigate();
   const { authUser, logout } = useAuth();
@@ -283,7 +283,7 @@ export default function CoordinatorDashboard() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button className="btn" onClick={() => navigate("/dashboard")} style={{ padding: "7px 12px", fontSize: 12 }}>
+          <button className="btn" onClick={onClose ? onClose : () => navigate("/dashboard")} style={{ padding: "7px 12px", fontSize: 12 }}>
             📊 Vista docente
           </button>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer" }}>
